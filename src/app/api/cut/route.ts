@@ -1,5 +1,5 @@
 import { cutCards } from "@/lib/pipeline";
-import { DEFAULT_SOURCE_LIMIT } from "@/lib/models";
+import { defaultSourceLimit } from "@/lib/env";
 import type { CutRequest } from "@/lib/types";
 
 /**
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "query is required" }, { status: 400 });
   }
 
-  const limit = Math.min(Math.max(body.limit ?? DEFAULT_SOURCE_LIMIT, 1), 20);
+  const limit = Math.min(Math.max(body.limit ?? defaultSourceLimit(), 1), 20);
 
   try {
     return Response.json(await cutCards(query, limit));

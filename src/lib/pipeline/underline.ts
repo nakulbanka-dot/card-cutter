@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { anthropic, cuttingModel } from "../clients";
+import { reasoningFor, effortConfig } from "../reasoning";
 import { findVerbatim } from "../verbatim";
 import type { Card, Underline } from "../types";
 
@@ -38,12 +39,15 @@ spoken for the tag to stand up. Everything unmarked gets skipped in round.
   The underlined words read in sequence must be honest to the full passage.`;
 
 export async function underline(card: Card): Promise<Underline[]> {
+  const model = cuttingModel();
+  const reasoning = reasoningFor(model, "medium", 4_000);
+
   const response = await anthropic().messages.parse({
-    model: cuttingModel(),
+    model,
     max_tokens: 4_000,
     system: SYSTEM,
-    thinking: { type: "adaptive" },
-    output_config: { format: zodOutputFormat(UnderlineSchema), effort: "medium" },
+    thinking: reasoning.thinking,
+    output_config: { format: zodOutputFormat(UnderlineSchema), ...effortConfig(reasoning) },
     messages: [
       {
         role: "user",

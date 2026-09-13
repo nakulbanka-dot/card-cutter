@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { anthropic, cuttingModel } from "../clients";
+import { reasoningFor, effortConfig } from "../reasoning";
 
 /**
  * Stage 1 — expand.
@@ -40,14 +41,17 @@ Query rules:
   serious press rather than blogs.`;
 
 export async function expand(query: string): Promise<Expansion> {
+  const model = cuttingModel();
+  const reasoning = reasoningFor(model, "low", 2_000);
+
   const response = await anthropic().messages.parse({
-    model: cuttingModel(),
+    model,
     max_tokens: 2_000,
     system: SYSTEM,
-    thinking: { type: "adaptive" },
+    thinking: reasoning.thinking,
     output_config: {
       format: zodOutputFormat(ExpansionSchema),
-      effort: "low",
+      ...effortConfig(reasoning),
     },
     messages: [{ role: "user", content: query }],
   });

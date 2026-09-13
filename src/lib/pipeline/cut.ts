@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { anthropic, cuttingModel } from "../clients";
+import { reasoningFor, effortConfig } from "../reasoning";
 import { findVerbatim } from "../verbatim";
 import type { Card, Source } from "../types";
 import type { Expansion } from "./expand";
@@ -79,12 +80,15 @@ export async function cutFromSource(
       ? "Find evidence that REFUTES this claim"
       : "Find evidence that SUPPORTS this claim";
 
+  const model = cuttingModel();
+  const reasoning = reasoningFor(model, "high", 8_000);
+
   const response = await anthropic().messages.parse({
-    model: cuttingModel(),
+    model,
     max_tokens: 8_000,
     system: SYSTEM,
-    thinking: { type: "adaptive" },
-    output_config: { format: zodOutputFormat(CutSchema), effort: "high" },
+    thinking: reasoning.thinking,
+    output_config: { format: zodOutputFormat(CutSchema), ...effortConfig(reasoning) },
     messages: [
       {
         role: "user",
