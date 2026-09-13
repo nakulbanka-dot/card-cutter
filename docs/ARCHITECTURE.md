@@ -1,11 +1,12 @@
-# How this is supposed to work
+# How this works
 
-Nothing here is built yet. This is the plan we're arguing about before writing code.
+All five stages are built, in `src/lib/pipeline/`. This is how they fit
+together and what's still open. Not yet run against the live APIs.
 
 ## The input
 
 One text box. Five to ten words. `"AI regulation kills innovation"`.
-That's the whole interface — no filters, no date pickers, no source whitelist in v1.
+No filters, no date pickers, no source whitelist in v1.
 
 ## The pipeline
 
@@ -13,38 +14,52 @@ That's the whole interface — no filters, no date pickers, no source whitelist 
 query ──▶ 1. EXPAND ──▶ 2. SEARCH ──▶ 3. EXTRACT ──▶ 4. CUT ──▶ 5. UNDERLINE ──▶ cards
 ```
 
-1. **Expand** — Claude turns the 5–10 words into several real search queries.
-   "AI regulation kills innovation" is not a search query; "EU AI Act compliance
-   cost startups 2026" is. This is also where we decide whether the user wants
-   aff or neg ground.
+1. **Expand** (`expand.ts`) — Claude turns the shorthand into real search
+   queries. "AI regulation kills innovation" is not a search query; "EU AI Act
+   compliance cost startups 2026" is. Also decides aff vs neg ground: say
+   "answers to" or "AT" and it looks for refutation instead.
 
-2. **Search** — Tavily, one call per expanded query. Returns URLs + snippets.
-   Dedupe by domain so we don't cut eight cards off the same outlet.
+2. **Search** (`search.ts`) — Tavily, one call per expanded query, merged.
+   Deduped by URL, capped at 2 per domain: eight cards off the same outlet is
+   one card as far as a judge is concerned. Best-scoring hits survive the cap.
 
-3. **Extract** — Tavily full-text extraction on the surviving URLs. Snippets are
-   useless for cutting; we need the whole article to find the good paragraph.
+3. **Extract** (`extract.ts`) — Tavily full-text on the survivors. Snippets are
+   useless for cutting; the quotable paragraph is almost never the one the
+   search engine previewed. Under 600 characters recovered is treated as a
+   paywall and skipped.
 
-4. **Cut** — Claude reads each article and returns: the tag, the verbatim
-   passage, and the cite. **The body must be verbatim.** A card with a
-   paraphrased body is a fabricated card, and that is the one failure mode that
-   actually matters in this project. Plan: have the model return character
-   offsets into the extracted text rather than re-typing the passage, then slice
-   it ourselves so paraphrase is structurally impossible.
+4. **Cut** (`cut.ts`) — Claude reads one article and proposes up to 3 cards,
+   usually 0 or 1. It's told explicitly that returning nothing is the correct
+   and common answer, because most articles contain nothing worth reading aloud.
 
-5. **Underline** — a second pass marking which spans get read aloud.
+   **The verbatim guard.** The model's quote is a *pointer*, not content.
+   `verbatim.ts` finds it in the real article and puts the article's own
+   characters on the card. A quote that can't be found word-for-word means the
+   model rewrote it, so the card is discarded rather than repaired. Matching
+   tolerates extraction drift (curly quotes, line wrapping, em-dashes, casing)
+   and nothing else. This is the constraint the whole design serves.
+
+5. **Underline** (`underline.ts`) — a second pass marking what gets read aloud.
    Separate from step 4 on purpose: "find the evidence" and "compress it to
-   eight seconds" are different judgments and the model does both worse when
-   asked at once.
+   eight seconds" are different judgments, and the model does both worse when
+   asked at once. Same guard applies — the model returns phrases, we locate
+   them ourselves, and a reworded phrase simply fails to place.
+
+Articles are cut 3 at a time (`CUT_CONCURRENCY`); each is a full-length Opus
+call, so this is the main cost and latency knob.
 
 ## Open questions
 
-- **Author qualification.** The thing that makes a card good is the author's
-  credential, and it's usually not in the article body. Separate lookup pass?
-- **Verbatim enforcement.** Offsets (above) are the plan, but extraction
-  normalizes whitespace, so offsets may drift. Needs a reconciliation step.
+- **Author qualification.** What makes a card good is the author's credential,
+  and it's usually not in the article body. The cutter is told to use null
+  rather than guess, so right now many cards will have a bare name. A separate
+  lookup pass is the obvious fix.
 - **Output format.** Debaters live in Verbatim / Word with specific styles.
   Do we export .docx, or is copy-paste from the browser enough for v1?
-- **Paywalls.** A meaningful share of good evidence is behind one. Do we detect
-  and skip, or surface the cite anyway and let the user find the text?
-- **Cost.** Opus reading 8 full articles per query is not free. Cheaper model
-  for a relevance pre-filter, Opus only on survivors?
+- **Paywalls.** Detected and skipped. Worth surfacing the cite anyway so you
+  can go find the text yourself?
+- **Cost.** Opus reading 8 full articles per query is not free. A cheap
+  relevance pre-filter (Haiku) before the Opus cut would cut most of that.
+- **Latency.** Expand → search → extract → cut → underline is serial by stage.
+  A minute-plus per query is likely. Streaming cards to the UI as they finish
+  would make it feel much better, and nothing in the design prevents it.

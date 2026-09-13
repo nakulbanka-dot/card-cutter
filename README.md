@@ -5,8 +5,9 @@ Cut debate cards from a five-to-ten word prompt.
 You type `AI regulation kills innovation`. It searches, reads the full text of
 what it finds, and hands back cards — tag, cite, verbatim body, underlines.
 
-**Status: scaffolding.** The pipeline is not implemented. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the plan and the open questions.
+**Status: pipeline built, never run end-to-end.** All five stages are wired up,
+and typecheck/lint/build/tests pass — but it has not been run against the live
+APIs, because that needs your keys. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Setup
 
@@ -19,16 +20,35 @@ npm run dev
 Keys needed: [Anthropic](https://console.anthropic.com/settings/keys) and
 [Tavily](https://app.tavily.com/home). `.env.local` is gitignored.
 
+## The one rule
+
+Card bodies are **verbatim**. A card whose body has been paraphrased, tightened,
+or "cleaned up" is a fabricated card — so the pipeline makes that structurally
+impossible rather than merely discouraged.
+
+The model never writes a card body. It points at a passage; `src/lib/verbatim.ts`
+finds that passage in the real article and puts **the article's own characters**
+on the card, discarding whatever the model typed. If the quote it returned isn't
+in the article word-for-word, the card is thrown away.
+
+Formatting drift from extraction — curly quotes, line wrapping, em-dash style,
+casing — is tolerated. A changed, dropped, or reordered word is not.
+
+`npm test` covers that guard, including the cases that must fail: a reworded
+quote and a dropped hedge.
+
 ## Layout
 
 | Path | What's there |
 | --- | --- |
-| `src/app/page.tsx` | Homepage — still the Next.js default |
-| `src/app/api/cut/route.ts` | `POST /api/cut`, stubbed at 501 |
-| `src/lib/types.ts` | `Card`, `Cite`, `Source`, `Underline` — the domain vocabulary |
+| `src/app/page.tsx` | Search box and results |
+| `src/app/api/cut/route.ts` | `POST /api/cut` |
+| `src/components/card-view.tsx` | Renders a card with its underlines |
+| `src/lib/verbatim.ts` | The fabrication guard |
+| `src/lib/pipeline/` | The five stages |
+| `src/lib/types.ts` | `Card`, `Cite`, `Source`, `Underline` |
 | `src/lib/env.ts` | Validated server env |
-| `src/lib/models.ts` | Model + fan-out constants |
-| `docs/ARCHITECTURE.md` | The pipeline plan |
+| `docs/ARCHITECTURE.md` | How the stages fit together, and what's open |
 
 ## Scripts
 
@@ -37,15 +57,8 @@ npm run dev        # dev server (Turbopack)
 npm run build      # production build
 npm run typecheck  # tsc, no emit
 npm run lint       # eslint
+npm test           # node:test — the verbatim matcher
 ```
-
-## The one rule
-
-Card bodies are **verbatim**. A card whose body has been paraphrased, tightened,
-or "cleaned up" is a fabricated card — in a round that's a career-ending
-accusation, so the pipeline has to make it structurally impossible rather than
-merely discouraged. That constraint drives most of the design in
-`docs/ARCHITECTURE.md`.
 
 ## Stack
 

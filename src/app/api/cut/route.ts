@@ -1,24 +1,34 @@
+import { cutCards } from "@/lib/pipeline";
+import { DEFAULT_SOURCE_LIMIT } from "@/lib/models";
 import type { CutRequest } from "@/lib/types";
 
 /**
- * POST /api/cut — takes a 5–10 word prompt, returns cut cards.
+ * POST /api/cut — takes a 5-10 word prompt, returns cut cards.
  *
- * Stub. The pipeline (search → extract → cut → underline) is not built yet;
- * see docs/ARCHITECTURE.md. This exists so the route shape is settled and the
- * frontend has something to call.
- *
- * Route handlers are not cached by default in Next 16, which is what we want —
+ * Route handlers are not cached by default in Next 16, which is what we want:
  * every query is fresh.
  */
 export async function POST(request: Request) {
-  const body = (await request.json()) as CutRequest;
+  let body: CutRequest;
+  try {
+    body = (await request.json()) as CutRequest;
+  } catch {
+    return Response.json({ error: "expected a JSON body" }, { status: 400 });
+  }
 
-  if (!body?.query?.trim()) {
+  const query = body?.query?.trim();
+  if (!query) {
     return Response.json({ error: "query is required" }, { status: 400 });
   }
 
-  return Response.json(
-    { error: "Not implemented yet", query: body.query },
-    { status: 501 },
-  );
+  const limit = Math.min(Math.max(body.limit ?? DEFAULT_SOURCE_LIMIT, 1), 20);
+
+  try {
+    return Response.json(await cutCards(query, limit));
+  } catch (error) {
+    // Missing keys surface here as a zod parse error from getEnv().
+    const message = error instanceof Error ? error.message : "unknown error";
+    console.error("cut failed:", error);
+    return Response.json({ error: message }, { status: 500 });
+  }
 }
