@@ -1,13 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { tavily } from "@tavily/core";
-import { getEnv } from "./env";
+import { getEnv, requireAnthropicKey } from "./env";
 
 let anthropicClient: Anthropic | undefined;
 let tavilyClient: ReturnType<typeof tavily> | undefined;
 
 export function anthropic(): Anthropic {
   if (!anthropicClient) {
-    anthropicClient = new Anthropic({ apiKey: getEnv().ANTHROPIC_API_KEY });
+    anthropicClient = new Anthropic({ apiKey: requireAnthropicKey() });
   }
   return anthropicClient;
 }

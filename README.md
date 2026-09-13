@@ -1,54 +1,67 @@
 # card-cutter
 
-Cut debate cards from a five-to-ten word prompt.
+Find debate evidence from a five-to-ten word prompt.
 
-You type `AI regulation kills innovation`. It searches, reads the full text of
-what it finds, and hands back cards — tag, cite, verbatim body, underlines.
+You type `nuclear power solves climate change`. It searches, pulls the full
+text of what it finds, and shows you the paragraphs most likely to hold the
+card — your terms highlighted, nav junk stripped.
 
-**Status: pipeline built, never run end-to-end.** All five stages are wired up,
-and typecheck/lint/build/tests pass — but it has not been run against the live
-APIs, because that needs your keys. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**Free mode is the default and needs one free API key.** No model calls, no
+per-query cost.
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill in the two keys
+cp .env.example .env.local   # add your Tavily key
 npm run dev
 ```
 
-Keys needed: [Anthropic](https://console.anthropic.com/settings/keys) and
-[Tavily](https://app.tavily.com/home). `.env.local` is gitignored.
+Get a [Tavily key](https://app.tavily.com/home) — the free tier is enough to
+use this properly. `.env.local` is gitignored.
+
+## The two modes
+
+| | Cost | What it does |
+| --- | --- | --- |
+| **Free** (`POST /api/find`) | Tavily free tier | Searches, extracts, ranks passages. You cut. |
+| **Paid** (`POST /api/cut`) | ~$0.50–1.00/query | Claude cuts the cards for you. |
+
+Free mode drops the expensive stage — deciding which paragraph is the warrant —
+which is the stage you're already good at. What it keeps is the grind: finding
+sourceable articles and getting clean text out of pages buried in nav bars.
+
+**Free, with Opus judgment.** Hit **Copy for Claude** and paste into the Claude
+you already pay for. Same quality cutting, zero API cost, one extra paste.
 
 ## The one rule
 
-Card bodies are **verbatim**. A card whose body has been paraphrased, tightened,
-or "cleaned up" is a fabricated card — so the pipeline makes that structurally
-impossible rather than merely discouraged.
+Card bodies are **verbatim**. A card whose body has been paraphrased or
+"cleaned up" is a fabricated card.
 
-The model never writes a card body. It points at a passage; `src/lib/verbatim.ts`
-finds that passage in the real article and puts **the article's own characters**
-on the card, discarding whatever the model typed. If the quote it returned isn't
-in the article word-for-word, the card is thrown away.
+In paid mode this is enforced in code: the model never writes a card body, it
+points at a passage, and `src/lib/verbatim.ts` puts *the article's own
+characters* on the card. If the quote isn't in the article word-for-word, the
+card is discarded. Formatting drift (curly quotes, line wrapping, casing) is
+tolerated; a changed word is not.
 
-Formatting drift from extraction — curly quotes, line wrapping, em-dash style,
-casing — is tolerated. A changed, dropped, or reordered word is not.
-
-`npm test` covers that guard, including the cases that must fail: a reworded
-quote and a dropped hedge.
+In free mode the markdown export carries the same rule as an instruction — and
+you're reading the output, which is the trade you accept for it costing nothing.
 
 ## Layout
 
 | Path | What's there |
 | --- | --- |
 | `src/app/page.tsx` | Search box and results |
-| `src/app/api/cut/route.ts` | `POST /api/cut` |
-| `src/components/card-view.tsx` | Renders a card with its underlines |
+| `src/app/api/find/route.ts` | Free mode |
+| `src/app/api/cut/route.ts` | Paid mode |
+| `src/lib/terms.ts` | Query parsing, no LLM |
+| `src/lib/passages.ts` | Paragraph ranking and highlighting |
 | `src/lib/verbatim.ts` | The fabrication guard |
-| `src/lib/pipeline/` | The five stages |
-| `src/lib/types.ts` | `Card`, `Cite`, `Source`, `Underline` |
-| `src/lib/env.ts` | Validated server env |
-| `docs/ARCHITECTURE.md` | How the stages fit together, and what's open |
+| `src/lib/export-markdown.ts` | The "Copy for Claude" payload |
+| `src/lib/pipeline/free.ts` | Free pipeline |
+| `src/lib/pipeline/` | Paid stages: expand, search, extract, cut, underline |
+| `docs/ARCHITECTURE.md` | How it fits together, and what's open |
 
 ## Scripts
 
@@ -57,10 +70,10 @@ npm run dev        # dev server (Turbopack)
 npm run build      # production build
 npm run typecheck  # tsc, no emit
 npm run lint       # eslint
-npm test           # node:test — the verbatim matcher
+npm test           # node:test — 25 tests, no API keys needed
 ```
 
 ## Stack
 
 Next.js 16 (App Router, Turbopack) · TypeScript · Tailwind v4 ·
-`@anthropic-ai/sdk` · `@tavily/core` · zod
+`@tavily/core` · `@anthropic-ai/sdk` (paid mode only) · zod
