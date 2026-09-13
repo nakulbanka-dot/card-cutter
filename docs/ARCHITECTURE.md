@@ -63,3 +63,58 @@ call, so this is the main cost and latency knob.
 - **Latency.** Expand → search → extract → cut → underline is serial by stage.
   A minute-plus per query is likely. Streaming cards to the UI as they finish
   would make it feel much better, and nothing in the design prevents it.
+
+---
+
+# Training on your own cards
+
+A cut card is a finished labeling task. Nobody has to sit down and label
+anything — the labels were produced as a side effect of cutting.
+
+| Part of the card | What it teaches |
+| --- | --- |
+| Tag | the query — measured median is 8 words, which *is* the prompt format |
+| Body | this paragraph beat everything else in the article |
+| Underlining | which words carried the argument, at token level |
+| Cite | which sources you trust, and the URL for negative mining |
+
+`npm run import-cards -- data/past-cards` reads `.docx` and `.html`, writes
+`data/cards.jsonl`, and reports what signal it found. Everything stays local.
+
+## The positives-only problem
+
+Past cards are all positives. A classifier that only ever sees good passages
+learns to call everything good — this is the single thing that decides whether
+any of this trains.
+
+The fix comes from the same data. Each card's cite carries the source URL.
+Re-extract that article and **every other paragraph in it is a negative you can
+trust**: the debater read that page and chose this paragraph over those. Those
+are hard negatives, worth far more than random paragraphs from unrelated
+articles, and they cost one extraction per card.
+
+## Position bias
+
+The other way this fails quietly. If you mostly cut from rank 0, a model
+trained on click data learns "rank 0 is good," which is circular. Three
+mitigations, all cheap:
+
+- log every passage *shown*, not only the ones acted on (done — `action: "shown"`)
+- shuffle the order ~10% of the time so lower ranks get a fair look
+- keep `shownRank` as a feature so the model can subtract position out
+
+Skip these and the metrics look great while the model learns nothing.
+
+## Metrics
+
+Baseline first, then measure every change against it. `GET /api/feedback`
+returns the first three today.
+
+- **Precision@k** — of the top k shown, the fraction cut. The headline number.
+- **Cut rate by rank** — if rank 0 and rank 3 cut equally, ranking does nothing.
+- **Source yield** — fraction of sources producing at least one cut.
+- **Citation completeness** — share of cites with both author and date.
+- **Time to first cut** — the honest usability number.
+
+Roughly 200 labeled passages before a learned ranker beats the heuristics;
+~500 for stable weights. Imported cards count toward that from day one.

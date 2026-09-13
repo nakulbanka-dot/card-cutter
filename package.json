@@ -8,11 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\"",
+    "import-cards": "node scripts/import-cards.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
     "@tavily/core": "^0.7.11",
+    "fflate": "^0.8.3",
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
