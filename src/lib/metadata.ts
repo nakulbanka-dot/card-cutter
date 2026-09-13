@@ -1,0 +1,249 @@
+import type { ArticleMetadata } from "./citation";
+
+/**
+ * Pull author/date/publication out of a page's own markup.
+ *
+ * Publishers declare this in JSON-LD and meta tags because search engines and
+ * social previews demand it. That makes citation a parsing job rather than a
+ * judgment call — exact, free, and not something a model should be guessing at.
+ *
+ * Source priority: JSON-LD (richest and most standardized) -> citation_* meta
+ * tags (used by academic publishers) -> OpenGraph -> plain meta -> <title>.
+ */
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;|&#x27;/gi, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .trim();
+}
+
+/** Read <meta name="x"> or <meta property="x">, whichever is present. */
+function metaTag(html: string, key: string): string | undefined {
+  const k = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `<meta[^>]+(?:name|property)\\s*=\\s*["']${k}["'][^>]*>`,
+    "i",
+  );
+  const tag = html.match(re)?.[0];
+  if (!tag) return undefined;
+
+  const content = tag.match(/content\s*=\s*["']([^"']*)["']/i)?.[1];
+  const value = content ? decodeEntities(content) : "";
+  return value || undefined;
+}
+
+/** All values for a repeated meta key (multiple authors). */
+function metaTagAll(html: string, key: string): string[] {
+  const k = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `<meta[^>]+(?:name|property)\\s*=\\s*["']${k}["'][^>]*>`,
+    "gi",
+  );
+  const out: string[] = [];
+  for (const m of html.matchAll(re)) {
+    const c = m[0].match(/content\s*=\s*["']([^"']*)["']/i)?.[1];
+    if (c) out.push(decodeEntities(c));
+  }
+  return out;
+}
+
+interface JsonLdNode {
+  "@type"?: string | string[];
+  headline?: string;
+  name?: string;
+  author?: unknown;
+  datePublished?: string;
+  dateCreated?: string;
+  dateModified?: string;
+  publisher?: { name?: string } | string;
+  isPartOf?: { name?: string };
+  "@graph"?: JsonLdNode[];
+}
+
+const ARTICLE_TYPES = /article|report|blogposting|newsarticle|scholarlyarticle/i;
+
+/** Author can be a string, an object, or an array of either. */
+function authorNames(author: unknown): string[] {
+  if (!author) return [];
+  if (typeof author === "string") return [author];
+  if (Array.isArray(author)) return author.flatMap(authorNames);
+  if (typeof author === "object") {
+    const name = (author as { name?: unknown }).name;
+    if (typeof name === "string") return [name];
+  }
+  return [];
+}
+
+function fromJsonLd(html: string): Partial<ArticleMetadata> {
+  const blocks = html.matchAll(
+    /<script[^>]+type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  );
+
+  for (const block of blocks) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(block[1].trim());
+    } catch {
+      continue; // Malformed JSON-LD is common; just move on.
+    }
+
+    // Flatten @graph and top-level arrays into candidate nodes.
+    const nodes: JsonLdNode[] = [];
+    const push = (n: unknown) => {
+      if (!n || typeof n !== "object") return;
+      const node = n as JsonLdNode;
+      nodes.push(node);
+      if (Array.isArray(node["@graph"])) node["@graph"].forEach(push);
+    };
+    if (Array.isArray(parsed)) parsed.forEach(push);
+    else push(parsed);
+
+    for (const node of nodes) {
+      const types = Array.isArray(node["@type"]) ? node["@type"] : [node["@type"]];
+      if (!types.some((t) => typeof t === "string" && ARTICLE_TYPES.test(t))) {
+        continue;
+      }
+
+      const publisher =
+        typeof node.publisher === "string" ? node.publisher : node.publisher?.name;
+
+      return {
+        authors: authorNames(node.author),
+        title: node.headline ?? node.name,
+        published: node.datePublished ?? node.dateCreated ?? node.dateModified,
+        publisher,
+        container: node.isPartOf?.name ?? publisher,
+      };
+    }
+  }
+
+  return {};
+}
+
+/**
+ * Institutional pages — think IEA, C2ES, government reports — routinely ship
+ * no date meta tag, and the date is exactly what a debate cite needs. Fall
+ * back to a <time datetime> element, then to a visible date near the top.
+ */
+function dateFromBody(html: string): string | undefined {
+  const timeTag = html.match(/<time[^>]+datetime\s*=\s*["']([^"']+)["']/i)?.[1];
+  if (timeTag && !Number.isNaN(new Date(timeTag).getTime())) return timeTag;
+
+  // "March 12, 2026" or "12 March 2026" in the first chunk of markup.
+  const head = html.slice(0, 60_000);
+  const months =
+    "January|February|March|April|May|June|July|August|September|October|November|December";
+  const written =
+    head.match(new RegExp(`\\b(${months})\\s+(\\d{1,2}),\\s*(\\d{4})\\b`, "i")) ??
+    head.match(new RegExp(`\\b(\\d{1,2})\\s+(${months})\\s+(\\d{4})\\b`, "i"));
+  if (written) {
+    const d = new Date(written[0]);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return undefined;
+}
+
+/** Site name from the hostname, as a last resort: "brookings.edu" -> "Brookings". */
+function siteFromHost(url: string): string | undefined {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    const name = host.split(".")[0];
+    return name ? name.charAt(0).toUpperCase() + name.slice(1) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function extractMetadata(html: string, url: string): ArticleMetadata {
+  const ld = fromJsonLd(html);
+
+  const authors =
+    ld.authors && ld.authors.length > 0
+      ? ld.authors
+      : [
+          ...metaTagAll(html, "citation_author"),
+          ...metaTagAll(html, "article:author"),
+          ...metaTagAll(html, "author"),
+          ...metaTagAll(html, "parsely-author"),
+        ].filter((a) => a && !/^https?:/.test(a));
+
+  const title =
+    ld.title ??
+    metaTag(html, "citation_title") ??
+    metaTag(html, "og:title") ??
+    decodeEntities(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "") ??
+    undefined;
+
+  const container =
+    ld.container ??
+    metaTag(html, "og:site_name") ??
+    metaTag(html, "citation_journal_title") ??
+    siteFromHost(url);
+
+  const published =
+    ld.published ??
+    metaTag(html, "article:published_time") ??
+    metaTag(html, "citation_publication_date") ??
+    metaTag(html, "citation_date") ??
+    metaTag(html, "date") ??
+    metaTag(html, "dc.date") ??
+    metaTag(html, "article:modified_time") ??
+    dateFromBody(html);
+
+  // Dedupe authors case-insensitively, preserving printed form.
+  const seen = new Set<string>();
+  const uniqueAuthors = authors.filter((a) => {
+    const k = a.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+
+  const missing: string[] = [];
+  if (uniqueAuthors.length === 0) missing.push("author");
+  if (!published) missing.push("date");
+  if (!title) missing.push("title");
+
+  return {
+    authors: uniqueAuthors,
+    title: title || undefined,
+    container,
+    publisher: ld.publisher,
+    published,
+    url,
+    missing,
+  };
+}
+
+/** Fetch a page and parse its metadata. Plain fetch — no API, no cost. */
+export async function fetchMetadata(url: string): Promise<ArticleMetadata> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        // Some publishers serve a stub to unknown agents.
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    // Only the <head> matters, and articles can be megabytes.
+    const html = (await res.text()).slice(0, 200_000);
+    return extractMetadata(html, url);
+  } catch {
+    return {
+      authors: [],
+      url,
+      container: siteFromHost(url),
+      missing: ["author", "date", "title"],
+    };
+  }
+}

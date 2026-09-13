@@ -18,6 +18,8 @@ For each card give me:
 - TAG: one sentence, the claim the card proves, written to be read aloud
 - CITE: author, their qualification, publication, date
 - BODY: the passage copied EXACTLY, word for word
+- The MLA line is already generated from the page's metadata — reuse it, and
+  say so if a field is marked missing rather than inventing one
 
 Rules:
 - Do not reword, tighten, or fix the grammar of the body. Copy it character
@@ -47,7 +49,12 @@ export function toMarkdown(result: FindResponse): string {
   result.sources.forEach((source, i) => {
     lines.push(`## Source ${i + 1}: ${source.title}`);
     lines.push(`URL: ${source.url}`);
-    if (source.publishedAt) lines.push(`Published: ${source.publishedAt}`);
+    lines.push(`MLA: ${source.mla}`);
+    if (source.missingCiteFields.length > 0) {
+      lines.push(
+        `(citation is missing: ${source.missingCiteFields.join(", ")} — fill in before using)`,
+      );
+    }
     lines.push("");
 
     source.passages.forEach((passage, j) => {

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # keep the template, ignore the real thing
 !.env.example
+
+# local training data — yours, never committed
+/data/

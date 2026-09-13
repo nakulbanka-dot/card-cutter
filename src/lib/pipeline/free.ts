@@ -4,6 +4,8 @@ import { tavilyClientInstance } from "../clients";
 import { mapWithConcurrency } from "../concurrency";
 import { parseQuery, searchVariants } from "../terms";
 import { rankPassages, type Passage } from "../passages";
+import { fetchMetadata } from "../metadata";
+import { toMLA, type ArticleMetadata } from "../citation";
 import { extract } from "./extract";
 import type { Hit } from "./search";
 
@@ -23,6 +25,11 @@ export interface FoundSource {
   passages: Passage[];
   /** Full extracted text, kept so the UI can offer the whole article. */
   body: string;
+  /** Ready-to-paste MLA 9 works-cited entry. */
+  mla: string;
+  /** Fields we couldn't determine from the page — the user fills these in. */
+  missingCiteFields: string[];
+  metadata: ArticleMetadata;
 }
 
 export interface FindResponse {
@@ -112,26 +119,44 @@ export async function findEvidence(
   const { sources, failed } = await extract(hits);
   const skipped = [...failed];
 
-  const found: FoundSource[] = [];
-  for (const source of sources) {
+  const keep = sources.filter((source) => {
     const passages = rankPassages(source.body, parsed.terms, PASSAGES_PER_SOURCE);
-
     if (passages.length === 0) {
       skipped.push({
         url: source.url,
         reason: "extracted fine, but no paragraph mentioned your terms",
       });
-      continue;
+      return false;
+    }
+    return true;
+  });
+
+  // Citation metadata comes from each page's own markup, so this is a plain
+  // fetch per source — free, and parallel since they're independent.
+  const found: FoundSource[] = await mapWithConcurrency(keep, 5, async (source) => {
+    const metadata = await fetchMetadata(source.url);
+
+    // Tavily's title and date are decent fallbacks when the page omits them.
+    if (!metadata.title && source.title) {
+      metadata.title = source.title;
+      metadata.missing = metadata.missing.filter((f) => f !== "title");
+    }
+    if (!metadata.published && source.publishedAt) {
+      metadata.published = source.publishedAt;
+      metadata.missing = metadata.missing.filter((f) => f !== "date");
     }
 
-    found.push({
+    return {
       url: source.url,
-      title: source.title,
-      publishedAt: source.publishedAt,
-      passages,
+      title: metadata.title ?? source.title,
+      publishedAt: metadata.published ?? source.publishedAt,
+      passages: rankPassages(source.body, parsed.terms, PASSAGES_PER_SOURCE),
       body: source.body,
-    });
-  }
+      mla: toMLA(metadata),
+      missingCiteFields: metadata.missing,
+      metadata,
+    };
+  });
 
   // Sources whose best paragraph scored highest go first.
   found.sort((a, b) => b.passages[0].score - a.passages[0].score);

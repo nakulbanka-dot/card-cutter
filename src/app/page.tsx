@@ -127,7 +127,7 @@ export default function Home() {
                   <SourceBlock
                     key={source.url}
                     source={source}
-                    terms={result.terms}
+                    result={result}
                     index={i}
                   />
                 ))}

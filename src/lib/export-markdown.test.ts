@@ -14,6 +14,16 @@ const RESULT: FindResponse = {
       title: "Nuclear and the Grid",
       publishedAt: "2026-03-01",
       body: "full article text",
+      mla: 'Chen, Wei. "Nuclear and the Grid." Brookings Institution, 1 Mar. 2026, example.org/nuclear. Accessed 13 Sept. 2026.',
+      missingCiteFields: [],
+      metadata: {
+        authors: ["Wei Chen"],
+        title: "Nuclear and the Grid",
+        container: "Brookings Institution",
+        published: "2026-03-01",
+        url: "https://example.org/nuclear",
+        missing: [],
+      },
       passages: [
         {
           text: "France generates roughly 70 percent of its electricity\nfrom nuclear reactors.",
@@ -43,7 +53,8 @@ test("instructs verbatim copying", () => {
 test("includes the cite details and blockquotes every passage line", () => {
   const md = toMarkdown(RESULT);
   assert.ok(md.includes("URL: https://example.org/nuclear"));
-  assert.ok(md.includes("Published: 2026-03-01"));
+  assert.ok(md.includes("MLA: Chen, Wei."), "MLA line should be in the export");
+  assert.ok(md.includes("1 Mar. 2026"), "date travels inside the MLA line");
   // Both lines of the wrapped passage must be quoted, not just the first.
   assert.ok(md.includes("> France generates roughly 70 percent of its electricity"));
   assert.ok(md.includes("> from nuclear reactors."));
