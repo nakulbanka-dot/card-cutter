@@ -1,4 +1,5 @@
-import { defaultSourceLimit } from "../env";
+import { TavilyKeylessLimitError } from "@tavily/core";
+import { defaultSourceLimit, hasTavilyKey } from "../env";
 import { tavilyClientInstance } from "../clients";
 import { mapWithConcurrency } from "../concurrency";
 import { parseQuery, searchVariants } from "../terms";
@@ -26,6 +27,8 @@ export interface FoundSource {
 
 export interface FindResponse {
   query: string;
+  /** False when running on Tavily's keyless tier, which has tighter caps. */
+  usingKey: boolean;
   terms: string[];
   wantsRefutation: boolean;
   sources: FoundSource[];
@@ -56,7 +59,10 @@ export async function findEvidence(
     async (q): Promise<Hit[]> => {
       try {
         const res = await client.search(q, {
-          searchDepth: "advanced",
+          // Basic costs half what advanced does, and we rank paragraphs
+          // ourselves anyway — advanced mainly improves Tavily's own snippet
+          // relevance, which free mode throws away.
+          searchDepth: "basic",
           maxResults: Math.max(5, limit),
           topic: "general",
         });
@@ -67,7 +73,10 @@ export async function findEvidence(
           publishedDate: r.publishedDate,
           viaQuery: q,
         }));
-      } catch {
+      } catch (err) {
+        // A keyless cap is the user's whole answer, not a dead query — let it
+        // through so they see why nothing came back.
+        if (err instanceof TavilyKeylessLimitError) throw err;
         return [];
       }
     },
@@ -92,6 +101,7 @@ export async function findEvidence(
   if (hits.length === 0) {
     return {
       query,
+      usingKey: hasTavilyKey(),
       terms: parsed.terms,
       wantsRefutation: parsed.wantsRefutation,
       sources: [],
@@ -128,6 +138,7 @@ export async function findEvidence(
 
   return {
     query,
+    usingKey: hasTavilyKey(),
     terms: parsed.terms,
     wantsRefutation: parsed.wantsRefutation,
     sources: found,

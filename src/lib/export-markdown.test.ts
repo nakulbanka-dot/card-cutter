@@ -5,6 +5,7 @@ import type { FindResponse } from "./pipeline/free.ts";
 
 const RESULT: FindResponse = {
   query: "nuclear power solves climate change",
+  usingKey: false,
   terms: ["nuclear", "power", "climate"],
   wantsRefutation: false,
   sources: [

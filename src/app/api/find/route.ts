@@ -1,5 +1,6 @@
 import { findEvidence } from "@/lib/pipeline/free";
 import { defaultSourceLimit } from "@/lib/env";
+import { TavilyKeylessLimitError } from "@tavily/core";
 
 /**
  * POST /api/find — free mode. Search, extract, rank passages.
@@ -23,6 +24,21 @@ export async function POST(request: Request) {
   try {
     return Response.json(await findEvidence(query, limit));
   } catch (error) {
+    if (error instanceof TavilyKeylessLimitError) {
+      const wait = error.retryAfter
+        ? ` Try again in about ${Math.ceil(error.retryAfter / 60)} minutes,`
+        : "";
+      return Response.json(
+        {
+          error:
+            `Hit the keyless ${error.capType} limit.${wait} or add a free ` +
+            "TAVILY_API_KEY to .env.local for 1,000 credits a month. " +
+            "No card required.",
+        },
+        { status: 429 },
+      );
+    }
+
     const message = error instanceof Error ? error.message : "unknown error";
     console.error("find failed:", error);
     return Response.json({ error: message }, { status: 500 });

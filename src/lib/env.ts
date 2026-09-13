@@ -4,12 +4,14 @@ import { DEFAULT_SOURCE_LIMIT } from "./models";
 /**
  * Server-side environment.
  *
- * Only the Tavily key is required. Free mode — search, extract, rank passages —
- * runs without Anthropic entirely, so demanding that key up front would lock
- * people out of the part that costs nothing.
+ * Neither key is required.
+ *
+ * Tavily's keyless mode supports search and extract — exactly the two calls
+ * free mode makes — subject to hourly/daily/monthly caps. So the app runs with
+ * no account at all; adding a free Tavily key just raises the ceiling.
  */
 const schema = z.object({
-  TAVILY_API_KEY: z.string().min(1, "TAVILY_API_KEY is not set"),
+  TAVILY_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   CARD_CUTTER_MODEL: z.string().optional(),
   CARD_CUTTER_SOURCE_LIMIT: z.string().optional(),
@@ -19,10 +21,15 @@ export type Env = z.infer<typeof schema>;
 
 let cached: Env | undefined;
 
-/** Throws a readable error if the Tavily key is missing. Server-only. */
+/** Server-only. Never throws for a missing key — keyless is a valid mode. */
 export function getEnv(): Env {
   if (!cached) cached = schema.parse(process.env);
   return cached;
+}
+
+/** True when a Tavily key is set. Without one we run keyless, under tighter caps. */
+export function hasTavilyKey(): boolean {
+  return Boolean(getEnv().TAVILY_API_KEY);
 }
 
 /** True when paid cutting is available. */

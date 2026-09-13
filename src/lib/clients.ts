@@ -14,7 +14,10 @@ export function anthropic(): Anthropic {
 
 export function tavilyClientInstance(): ReturnType<typeof tavily> {
   if (!tavilyClient) {
-    tavilyClient = tavily({ apiKey: getEnv().TAVILY_API_KEY });
+    // Passing no apiKey puts the SDK in keyless mode, which supports the
+    // search and extract calls free mode needs.
+    const key = getEnv().TAVILY_API_KEY;
+    tavilyClient = tavily(key ? { apiKey: key } : {});
   }
   return tavilyClient;
 }

@@ -80,7 +80,8 @@ export default function Home() {
         </div>
 
         <p className="mt-2 text-xs text-neutral-400">
-          Tip: start with &ldquo;answers to&rdquo; to get the other side.
+          Tip: start with &ldquo;answers to&rdquo; to get the other side. Runs
+          with no account; add a free Tavily key to raise the limits.
         </p>
       </form>
 
@@ -111,6 +112,7 @@ export default function Home() {
                   {result.sources.length} source
                   {result.sources.length === 1 ? "" : "s"}
                   {result.wantsRefutation && " · against the claim"}
+                  {!result.usingKey && " · keyless"}
                 </p>
                 <button
                   onClick={copyForClaude}

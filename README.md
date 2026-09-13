@@ -6,25 +6,30 @@ You type `nuclear power solves climate change`. It searches, pulls the full
 text of what it finds, and shows you the paragraphs most likely to hold the
 card — your terms highlighted, nav junk stripped.
 
-**Free mode is the default and needs one free API key.** No model calls, no
-per-query cost.
+**Free mode is the default and needs no account at all.** Tavily's keyless
+tier covers the search and extract calls it makes, so there is nothing to sign
+up for and nothing to pay.
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env.local   # add your Tavily key
 npm run dev
 ```
 
-Get a [Tavily key](https://app.tavily.com/home) — the free tier is enough to
-use this properly. `.env.local` is gitignored.
+That's it. No `.env.local` needed to start.
+
+Hitting the keyless caps? A [free Tavily key](https://app.tavily.com/home)
+(no credit card) raises it to 1,000 credits a month — roughly 100+ queries.
+That free tier is a **hard stop**: it refuses requests rather than billing you.
+You are only charged if you deliberately upgrade to Pay As You Go. See
+`.env.example`.
 
 ## The two modes
 
 | | Cost | What it does |
 | --- | --- | --- |
-| **Free** (`POST /api/find`) | Tavily free tier | Searches, extracts, ranks passages. You cut. |
+| **Free** (`POST /api/find`) | $0, no account | Searches, extracts, ranks passages. You cut. |
 | **Paid** (`POST /api/cut`) | ~$0.50–1.00/query | Claude cuts the cards for you. |
 
 Free mode drops the expensive stage — deciding which paragraph is the warrant —
