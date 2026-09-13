@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# card-cutter
 
-## Getting Started
+Cut debate cards from a five-to-ten word prompt.
 
-First, run the development server:
+You type `AI regulation kills innovation`. It searches, reads the full text of
+what it finds, and hands back cards — tag, cite, verbatim body, underlines.
+
+**Status: scaffolding.** The pipeline is not implemented. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the plan and the open questions.
+
+## Setup
 
 ```bash
+npm install
+cp .env.example .env.local   # then fill in the two keys
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Keys needed: [Anthropic](https://console.anthropic.com/settings/keys) and
+[Tavily](https://app.tavily.com/home). `.env.local` is gitignored.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Layout
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Path | What's there |
+| --- | --- |
+| `src/app/page.tsx` | Homepage — still the Next.js default |
+| `src/app/api/cut/route.ts` | `POST /api/cut`, stubbed at 501 |
+| `src/lib/types.ts` | `Card`, `Cite`, `Source`, `Underline` — the domain vocabulary |
+| `src/lib/env.ts` | Validated server env |
+| `src/lib/models.ts` | Model + fan-out constants |
+| `docs/ARCHITECTURE.md` | The pipeline plan |
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run dev        # dev server (Turbopack)
+npm run build      # production build
+npm run typecheck  # tsc, no emit
+npm run lint       # eslint
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## The one rule
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Card bodies are **verbatim**. A card whose body has been paraphrased, tightened,
+or "cleaned up" is a fabricated card — in a round that's a career-ending
+accusation, so the pipeline has to make it structurally impossible rather than
+merely discouraged. That constraint drives most of the design in
+`docs/ARCHITECTURE.md`.
 
-## Deploy on Vercel
+## Stack
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Next.js 16 (App Router, Turbopack) · TypeScript · Tailwind v4 ·
+`@anthropic-ai/sdk` · `@tavily/core` · zod
