@@ -118,3 +118,71 @@ returns the first three today.
 
 Roughly 200 labeled passages before a learned ranker beats the heuristics;
 ~500 for stable weights. Imported cards count toward that from day one.
+
+---
+
+# What the corpus training actually showed
+
+Pulled all 4,830,561 openCaselist cards (MIT, 9.9 GB slim). Exported the
+subset re-cut 3+ times: 2,890,696 cards. Trained on 250,000 of them.
+
+## Result
+
+    base rate   50.2%   <- accuracy to beat
+    test acc    77.2%
+    test AUC    0.842   <- 0.5 is chance
+
+    termCoverage    +1.18  ██████████████
+    termDensity     +0.96  ████████████
+    logChars        -0.32  ████
+    ... everything else below 0.2
+
+## The result is worse than it looks
+
+AUC 0.842 sounds like it works. The weights say otherwise: the model put
+essentially all of its mass on `termCoverage` and `termDensity` — it learned
+keyword matching, which the heuristic already did. Credentials, quantities and
+hedging carry no weight at all.
+
+The second run tested whether better negatives would fix it. 185,383 of the
+500,000 examples were **opposite-side** negatives: same topic, same season, a
+card cut by the other team arguing the other way. Keyword overlap cannot
+separate those pairs, so the model had every reason to learn direction.
+
+It did not. AUC 0.842 versus 0.846 — statistically the same model.
+
+## Why
+
+The features are the limit, not the negatives. All twelve are bag-of-words
+statistics, and no combination of them can distinguish "nuclear solves
+climate" from "nuclear does not solve climate". The words are identical. A
+12-dimensional word-count vector has no way to represent negation or stance,
+so no amount of training data will teach it one.
+
+## What would actually work
+
+1. **Embeddings.** Encode the tag and the passage, feed cosine similarity plus
+   the existing features into the same classifier. Captures meaning rather
+   than word overlap, so negation changes the vector. Runs locally.
+2. **Negation features.** Detect negation near query terms. Crude, cheap, and
+   probably worth a day to see how far it gets.
+3. **A cheap model call.** Haiku scoring "does this support the claim" on the
+   top few sources. Works today, at roughly a tenth of a cent per query.
+4. **A cross-encoder.** The real answer and the heaviest lift.
+
+The trained model is kept at `data/training/ranker.json` for comparison, but
+it is deliberately **not wired into production** — it does not beat the
+heuristic it would replace, and shipping it would add a model dependency for
+no gain.
+
+## Corpus limitations worth knowing
+
+- **PF is 0.7% of the corpus.** 19,818 PF cards against 1.9M policy and
+  725K LD. A ranker trained on this learns policy debate's conventions.
+- **The data stops in 2022.** Nothing on recent topics, so source reputation
+  learned from it will be stale on anything current.
+
+Both point the same way: the corpus is good for learning what a cuttable
+passage looks like in general, and poor for learning this event or this
+season. Your own files and your own Cut/Not-useful clicks stay the better
+signal for those.
