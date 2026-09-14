@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/cut", label: "Cut cards" },
   { href: "/about", label: "About" },
   { href: "/pricing", label: "Pricing" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function SiteNav() {

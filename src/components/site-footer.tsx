@@ -18,6 +18,15 @@ export function SiteFooter() {
           <Link href="/pricing" className="hover:text-fg">
             Pricing
           </Link>
+          <a
+            href="https://logos-debate.netlify.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-fg"
+            title="Search cards other people have already cut"
+          >
+            Logos ↗
+          </a>
         </div>
       </div>
     </footer>

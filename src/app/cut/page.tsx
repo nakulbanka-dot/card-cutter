@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { SourceBlock } from "@/components/passage-list";
+import { Results } from "@/components/results";
+import { useSettings } from "@/lib/settings";
 import { toMarkdown } from "@/lib/export-markdown";
 import type { FindResponse } from "@/lib/pipeline/free";
 
@@ -12,6 +13,7 @@ const EXAMPLES = [
 ];
 
 export default function CutPage() {
+  const { settings } = useSettings();
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<FindResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export default function CutPage() {
       const res = await fetch("/api/find", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q }),
+        body: JSON.stringify({ query: q, limit: settings.sourceLimit }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Something went wrong.");
@@ -165,34 +167,12 @@ export default function CutPage() {
                 </button>
               </div>
 
-              <div className="space-y-8 pt-6">
-                {result.sources.map((source, i) => (
-                  <SourceBlock
-                    key={source.url}
-                    source={source}
-                    result={result}
-                    index={i}
-                  />
-                ))}
+              <div className="pt-6">
+                <Results result={result} />
               </div>
             </>
           )}
 
-          {result.skipped.length > 0 && (
-            <details className="mt-10 text-sm">
-              <summary className="cursor-pointer text-muted hover:text-fg">
-                {result.skipped.length} source
-                {result.skipped.length === 1 ? "" : "s"} skipped
-              </summary>
-              <ul className="mt-3 space-y-1.5 text-xs text-faint">
-                {result.skipped.map((s, i) => (
-                  <li key={i} className="truncate">
-                    {s.reason} — {s.url}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
         </section>
       )}
     </main>
