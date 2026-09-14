@@ -31,14 +31,14 @@ reductions must occur to hold warming near current targets.
 test("parseQuery strips filler and keeps content words", () => {
   const p = parseQuery("nuclear power solves climate change");
   assert.deepEqual(p.terms, ["nuclear", "power", "solves", "climate", "change"]);
-  assert.equal(p.wantsRefutation, false);
 });
 
-test("parseQuery detects a request for the other side", () => {
-  const p = parseQuery("answers to nuclear power solves climate");
-  assert.equal(p.wantsRefutation, true);
-  assert.ok(!p.searchQuery.startsWith("answers to"));
-  assert.ok(searchVariants(p).some((v) => v.includes("against")));
+test("search variants widen the net without changing the claim", () => {
+  const p = parseQuery("nuclear power solves climate");
+  const variants = searchVariants(p);
+  assert.ok(variants.includes(p.searchQuery), "the plain query is always tried");
+  assert.ok(variants.length >= 2, "and at least one widened form");
+  assert.ok(variants.every((v) => v.includes("nuclear")), "the claim is never dropped");
 });
 
 test("ranks the evidence paragraph above the irrelevant one", () => {

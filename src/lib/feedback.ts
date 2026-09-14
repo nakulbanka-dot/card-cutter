@@ -43,7 +43,6 @@ export interface FeedbackRow {
   ts: string;
   query: string;
   terms: string[];
-  wantsRefutation: boolean;
   url: string;
   passageText: string;
   action: Action;

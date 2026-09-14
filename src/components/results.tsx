@@ -71,7 +71,6 @@ export function Results({ result }: { result: FindResponse }) {
         body: JSON.stringify({
           query: result.query,
           terms: result.terms,
-          wantsRefutation: result.wantsRefutation,
           url: source.url,
           passageText: source.passages[i].text,
           action,

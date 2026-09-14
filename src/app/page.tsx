@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TrainingCounter } from "@/components/training-counter";
 
 const STEPS = [
   {
@@ -53,6 +54,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <TrainingCounter />
 
       {/* What it looks like */}
       <section className="border-y border-border bg-surface">

@@ -41,7 +41,6 @@ export interface FindResponse {
   /** False when running on Tavily's keyless tier, which has tighter caps. */
   usingKey: boolean;
   terms: string[];
-  wantsRefutation: boolean;
   sources: FoundSource[];
   skipped: { url: string; reason: string }[];
 }
@@ -121,7 +120,6 @@ export async function findEvidence(
       query,
       usingKey: hasTavilyKey(),
       terms: parsed.terms,
-      wantsRefutation: parsed.wantsRefutation,
       sources: [],
       skipped: [],
     };
@@ -183,7 +181,6 @@ export async function findEvidence(
   const stances = await scoreStanceBatch(
     parsed.searchQuery,
     found.map((f) => ({ title: f.title, text: f.passages[0]?.text ?? "" })),
-    parsed.wantsRefutation,
   );
 
   found.forEach((f, i) => {
@@ -203,7 +200,6 @@ export async function findEvidence(
     query,
     usingKey: hasTavilyKey(),
     terms: parsed.terms,
-    wantsRefutation: parsed.wantsRefutation,
     sources: found,
     skipped,
   };

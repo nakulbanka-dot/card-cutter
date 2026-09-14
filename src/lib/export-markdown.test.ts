@@ -7,7 +7,6 @@ const RESULT: FindResponse = {
   query: "nuclear power solves climate change",
   usingKey: false,
   terms: ["nuclear", "power", "climate"],
-  wantsRefutation: false,
   sources: [
     {
       url: "https://example.org/nuclear",
@@ -62,10 +61,8 @@ test("includes the cite details and blockquotes every passage line", () => {
   assert.ok(md.includes("> from nuclear reactors."));
 });
 
-test("refutation flips the direction line", () => {
-  const md = toMarkdown({ ...RESULT, wantsRefutation: true });
-  assert.ok(md.includes("REFUTES"));
-  assert.ok(!md.includes("I want evidence that SUPPORTS"));
+test("the export states the direction it wants", () => {
+  assert.ok(toMarkdown(RESULT).includes("I want evidence that SUPPORTS"));
 });
 
 test("handles an empty result without throwing", () => {

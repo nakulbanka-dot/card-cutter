@@ -72,7 +72,6 @@ export interface StanceResult {
 export async function scoreStance(
   claim: string,
   passage: string,
-  wantsRefutation = false,
   /** The headline. Carries the article's thesis, which the passage may not. */
   title = "",
 ): Promise<StanceResult | null> {
@@ -95,10 +94,7 @@ export async function scoreStance(
     const i = result.labels.indexOf(supports);
     if (i === -1) return null;
 
-    const score = result.scores[i];
-    // "Answers to X" wants sources that contradict X, so the useful passage is
-    // the one that argues against the claim.
-    return { support: wantsRefutation ? 1 - score : score };
+    return { support: result.scores[i] };
   } catch {
     return null;
   }
@@ -108,13 +104,12 @@ export async function scoreStance(
 export async function scoreStanceBatch(
   claim: string,
   passages: { title: string; text: string }[],
-  wantsRefutation = false,
 ): Promise<(number | null)[]> {
   const out: (number | null)[] = [];
   // Sequential on purpose: the runtime is already multi-threaded internally,
   // and running these in parallel makes each slower rather than the set faster.
   for (const p of passages) {
-    const r = await scoreStance(claim, p.text, wantsRefutation, p.title);
+    const r = await scoreStance(claim, p.text, p.title);
     out.push(r ? r.support : null);
   }
   return out;

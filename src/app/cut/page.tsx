@@ -8,7 +8,7 @@ import type { FindResponse } from "@/lib/pipeline/free";
 
 const EXAMPLES = [
   "nuclear power solves climate change",
-  "answers to AI regulation kills innovation",
+  "AI regulation kills innovation",
   "sanctions on Russia have failed",
 ];
 
@@ -116,7 +116,7 @@ export default function CutPage() {
           </div>
 
           <div className="mt-2 flex min-h-4 items-center justify-between text-xs text-faint">
-            <span>Start with &ldquo;answers to&rdquo; to find the other side.</span>
+            <span>One line, the way you&rsquo;d write a tag.</span>
             <span>{words > 12 ? "Try trimming it down" : words > 0 ? `${words} words` : ""}</span>
           </div>
         </form>
@@ -190,7 +190,6 @@ export default function CutPage() {
                 <p className="text-sm text-muted">
                   <span className="font-medium text-fg">{passages}</span> passages from{" "}
                   <span className="font-medium text-fg">{result.sources.length}</span> sources
-                  {result.wantsRefutation && " · against the claim"}
                 </p>
 
                 <div className="flex items-center gap-2">

@@ -33,9 +33,7 @@ export function toMarkdown(result: FindResponse): string {
 
   lines.push(
     `CLAIM: ${result.query}`,
-    result.wantsRefutation
-      ? "I want evidence that REFUTES this claim."
-      : "I want evidence that SUPPORTS this claim.",
+    "I want evidence that SUPPORTS this claim.",
     "",
     "---",
     "",
