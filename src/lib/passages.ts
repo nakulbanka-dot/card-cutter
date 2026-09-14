@@ -22,6 +22,12 @@ export interface Passage {
   matched: string[];
   /** How many paragraphs this passage spans. */
   paragraphCount: number;
+  /**
+   * What the model made of it: how strongly this paragraph argues the claim.
+   * Undefined when the model could not read it, in which case ordering falls
+   * back to the keyword score.
+   */
+  support?: number;
 }
 
 /**

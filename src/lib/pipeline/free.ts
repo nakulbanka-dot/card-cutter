@@ -47,6 +47,15 @@ export interface FindResponse {
 
 const MAX_PER_DOMAIN = 2;
 const PASSAGES_PER_SOURCE = 4;
+/**
+ * Candidates the model reads before choosing.
+ *
+ * Keyword scoring is now only a shortlist: it is cheap and it is bad at
+ * judgment, so it narrows each article to a handful of plausible paragraphs
+ * and the model decides which of those actually argue the claim. Reading
+ * every paragraph of every article would be better and far too slow.
+ */
+const CANDIDATES_PER_SOURCE = 8;
 
 function domainOf(url: string): string {
   try {
@@ -155,45 +164,69 @@ export async function findEvidence(
       metadata.missing = metadata.missing.filter((f) => f !== "date");
     }
 
-    const passages = rankPassages(source.body, parsed.terms, PASSAGES_PER_SOURCE);
+    const candidates = rankPassages(source.body, parsed.terms, CANDIDATES_PER_SOURCE);
     const title = metadata.title ?? source.title;
 
     return {
       url: source.url,
       title,
       publishedAt: metadata.published ?? source.publishedAt,
-      passages,
+      passages: candidates,
       body: source.body,
       mla: toMLA(metadata),
       missingCiteFields: metadata.missing,
       metadata,
       match: matchScore(parsed.terms, {
         title,
-        passage: passages[0]?.text ?? "",
+        passage: candidates[0]?.text ?? "",
         article: source.body,
       }),
     };
   });
 
-  // Stance: does each source argue the claim, or against it? This is what
-  // keyword matching cannot see, and it runs on the best passage of each
-  // source rather than every passage — about 200ms apiece.
-  const stances = await scoreStanceBatch(
+  // The model reads every shortlisted paragraph, not just the first one.
+  // Keyword scoring got them onto the shortlist; this decides which of them
+  // is actually worth cutting, and in what order.
+  const jobs: { source: number; passage: number; title: string; text: string }[] = [];
+  found.forEach((f, si) => {
+    f.passages.forEach((p, pi) => {
+      jobs.push({ source: si, passage: pi, title: f.title, text: p.text });
+    });
+  });
+
+  const read = await scoreStanceBatch(
     parsed.searchQuery,
-    found.map((f) => ({ title: f.title, text: f.passages[0]?.text ?? "" })),
+    jobs.map((j) => ({ title: j.title, text: j.text })),
   );
 
-  found.forEach((f, i) => {
-    const support = stances[i];
-    if (support === null) return; // model unavailable — keep keyword-only score
+  const supportBySource = new Map<number, number[]>();
+  jobs.forEach((job, i) => {
+    const support = read[i];
+    if (support === null) return;
+    found[job.source].passages[job.passage].support = support;
+    const list = supportBySource.get(job.source) ?? [];
+    list.push(support);
+    supportBySource.set(job.source, list);
+  });
+
+  found.forEach((f, si) => {
+    const supports = supportBySource.get(si);
+
+    // Order paragraphs by what the model found, keeping keyword score only as
+    // a tiebreaker for anything it could not read.
+    f.passages.sort((a, b) => (b.support ?? -1) - (a.support ?? -1) || b.score - a.score);
+    f.passages = f.passages.slice(0, PASSAGES_PER_SOURCE);
+
+    if (!supports || supports.length === 0) return;
+    // A source is as good as its best paragraph, which is what you would cut.
+    const best = Math.max(...supports);
     f.match = matchScore(
       parsed.terms,
       { title: f.title, passage: f.passages[0]?.text ?? "", article: f.body },
-      support,
+      best,
     );
   });
 
-  // Sources whose best paragraph scored highest go first.
   found.sort((a, b) => b.match.score - a.match.score);
 
   return {

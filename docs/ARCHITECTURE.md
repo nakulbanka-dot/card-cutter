@@ -186,3 +186,39 @@ Both point the same way: the corpus is good for learning what a cuttable
 passage looks like in general, and poor for learning this event or this
 season. Your own files and your own Cut/Not-useful clicks stay the better
 signal for those.
+
+
+---
+
+# What reads the articles, and what does not
+
+Worth stating precisely, because it is easy to assume more is happening than is.
+
+## Keyword scoring — no model
+
+- splitting the tag into terms
+- the search queries sent out
+- **shortlisting** candidate paragraphs from each article
+- the topic components of the match score (title, passage, article, density)
+
+## The model — reads the text
+
+- **choosing** which shortlisted paragraphs you actually see
+- ordering them
+- deciding whether each argues your claim
+- the direction component of the match score, weighted highest at 0.35
+
+Keyword scoring narrows each article to eight plausible paragraphs, because it
+is cheap and reading every paragraph of every article would be far too slow.
+The model then reads all eight and picks the four worth showing. Measured on
+one query, it chose a different top passage from the keyword favourite in
+**5 sources out of 5**, and its pick scored higher on argument every time —
+95 against 76, 97 against 75, 98 against 92.
+
+That shortlist is still a real limit. A paragraph that argues the claim
+perfectly while using none of your words never reaches the model, because
+keywords never surface it. Fixing that needs semantic retrieval over the whole
+article rather than term matching, which is the next honest step.
+
+Cost of reading: roughly 200ms per paragraph, so about 13 seconds on a
+64-paragraph query. That is the bulk of the wait.

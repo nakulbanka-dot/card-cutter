@@ -188,8 +188,8 @@ export function Results({ result }: { result: FindResponse }) {
               ))}
               <p className="pt-1 text-[10px] leading-snug text-faint">
                 {source.match.support === undefined
-                  ? "Measures topic only — not yet which side the source argues."
-                  : "Topic and direction, combined into one score."}
+                  ? "Measures topic only — the model could not read these passages."
+                  : "The model read every candidate passage and chose these."}
               </p>
             </div>
           </details>
@@ -253,6 +253,20 @@ export function Results({ result }: { result: FindResponse }) {
                 </blockquote>
 
                 <div className="mt-3 flex items-center gap-3 border-t border-border pt-3">
+                  {p.support !== undefined && (
+                    <span
+                      title="How strongly this passage argues your claim, read by the model"
+                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${
+                        p.support >= 0.7
+                          ? "bg-good/15 text-good"
+                          : p.support >= 0.4
+                            ? "bg-warn-soft text-warn"
+                            : "bg-border text-faint"
+                      }`}
+                    >
+                      {Math.round(p.support * 100)}% argues it
+                    </span>
+                  )}
                   {acted[key] === "cut" ? (
                     <span className="text-xs font-medium text-good">Copied with citation</span>
                   ) : acted[key] === "reject" ? (
