@@ -164,6 +164,11 @@ export function Results({ result }: { result: FindResponse }) {
             {/* The number is only useful if you can see what produced it. */}
             <div className="space-y-1.5 border-t border-border px-4 py-3">
               {[
+                // Direction leads when it is available: it carries the most
+                // weight and it is the component people actually question.
+                ...(source.match.support !== undefined
+                  ? [["Argues your side", source.match.support] as const]
+                  : []),
                 ["Terms in title", source.match.title],
                 ["Terms in the passage", source.match.passage],
                 ["Terms in the article", source.match.article],
@@ -183,7 +188,9 @@ export function Results({ result }: { result: FindResponse }) {
                 </div>
               ))}
               <p className="pt-1 text-[10px] leading-snug text-faint">
-                Measures topic, not which side the source argues.
+                {source.match.support === undefined
+                  ? "Measures topic only — not yet which side the source argues."
+                  : "Topic and direction, combined into one score."}
               </p>
             </div>
           </details>

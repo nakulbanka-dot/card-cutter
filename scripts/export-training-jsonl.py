@@ -70,6 +70,10 @@ with open(args.out, "w", encoding="utf-8") as out:
                 "year": (cols["year"][i] or "").strip(),
                 "event": event,
                 "level": (cols["level"][i] or "").strip(),
+                # A = affirmative, N = negative. Two cards on the same topic
+                # from opposite sides are the only stance-contrast pairs the
+                # corpus contains, and stance is what keywords cannot see.
+                "side": (cols["side"][i] or "").strip(),
                 "bucketId": cols["bucketId"][i],
             }, ensure_ascii=False) + "\n")
 

@@ -38,10 +38,13 @@ for await (const line of rl) {
   if (!line.trim()) continue;
   let c;
   try { c = JSON.parse(line); } catch { continue; }
+  // A 25 GB JSONL will contain the odd truncated or malformed record; a
+  // missing field must skip the row, not kill a twenty-minute training run.
+  if (typeof c.tag !== "string" || typeof c.body !== "string") continue;
   if (EVENT && c.event !== EVENT) continue;
   const terms = termsFromTag(c.tag);
   if (terms.length < 2 || c.body.length < 200) continue;
-  cards.push({ terms, body: c.body, dupes: c.dupes, bucketId: c.bucketId });
+  cards.push({ terms, body: c.body, dupes: c.dupes, bucketId: c.bucketId, side: c.side, year: c.year });
   if (cards.length >= MAX) break;
 }
 console.log(`  ${cards.length.toLocaleString()} usable cards`);
@@ -69,6 +72,7 @@ const X = [];
 const y = [];
 let hard = 0;
 let random = 0;
+let opposing = 0;
 
 for (let i = 0; i < cards.length; i++) {
   const card = cards[i];
@@ -83,9 +87,19 @@ for (let i = 0; i < cards.length; i++) {
     let j = -1;
 
     if (pool && pool.length > 1) {
-      for (let tries = 0; tries < 8; tries++) {
+      // Hardest first: same topic, same season, OPPOSITE side. Those two cards
+      // share vocabulary and argue against each other, so keyword overlap
+      // cannot separate them and the model has to learn direction.
+      for (let tries = 0; tries < 12; tries++) {
         const cand = pool[Math.floor(rand() * pool.length)];
-        if (cand !== i && cards[cand].bucketId !== card.bucketId) { j = cand; break; }
+        const other = cards[cand];
+        if (cand === i || other.bucketId === card.bucketId) continue;
+        if (card.side && other.side && other.side !== card.side && other.year === card.year) {
+          j = cand;
+          opposing++;
+          break;
+        }
+        if (j === -1) j = cand; // keep as fallback, keep looking for opposite
       }
       if (j !== -1) hard++;
     }
@@ -101,7 +115,7 @@ for (let i = 0; i < cards.length; i++) {
   }
 }
 
-console.log(`  ${X.length.toLocaleString()} examples  (${hard.toLocaleString()} hard negatives, ${random.toLocaleString()} random)`);
+console.log(`  ${X.length.toLocaleString()} examples  (${opposing.toLocaleString()} opposite-side, ${(hard - opposing).toLocaleString()} same-topic, ${random.toLocaleString()} random)`);
 
 console.log("Training…");
 const model = train(X, y, { epochs: 400, learningRate: 0.5, l2: 1e-4 });

@@ -110,3 +110,48 @@ test("known weakness: an opposing source still matches topically", () => {
     `a source arguing the opposite still scores ${asPercent(against.score)}%`,
   );
 });
+
+test("support, when present, moves the single score", () => {
+  const args = {
+    title: "Nuclear and climate in France",
+    passage: "France uses nuclear for climate goals.",
+    article: "nuclear climate france ".repeat(30),
+  };
+  const supports = matchScore(TERMS, args, 1);
+  const opposes = matchScore(TERMS, args, 0);
+
+  // Identical keyword match; only direction differs.
+  assert.ok(supports.score > opposes.score);
+  assert.ok(asPercent(supports.score) - asPercent(opposes.score) >= 30,
+    "direction must be able to outweigh a strong keyword match");
+});
+
+test("an opposing source drops below a weaker but supporting one", () => {
+  const opposing = matchScore(TERMS, {
+    title: "Why nuclear does not help climate goals in France",
+    passage: "Nuclear cannot meet France's climate targets.",
+    article: "nuclear climate france ".repeat(40),
+  }, 0.05);
+
+  const supportingButWeaker = matchScore(TERMS, {
+    title: "Energy notes",
+    passage: "France's nuclear fleet cut climate emissions sharply.",
+    article: "nuclear climate ".repeat(10),
+  }, 0.95);
+
+  assert.ok(supportingButWeaker.score > opposing.score,
+    "this is the failure the ranker exists to fix");
+});
+
+test("without support the score is unchanged from keyword-only weighting", () => {
+  const args = { title: "Nuclear climate France", passage: "Nuclear.", article: "nuclear ".repeat(20) };
+  const m = matchScore(TERMS, args);
+  assert.equal(m.support, undefined);
+  assert.ok(m.score > 0);
+});
+
+test("an out-of-range support value is clamped, not trusted", () => {
+  const args = { title: "Nuclear", passage: "Nuclear.", article: "nuclear ".repeat(20) };
+  assert.ok(matchScore(TERMS, args, 5).score <= 1);
+  assert.ok(matchScore(TERMS, args, -3).score >= 0);
+});

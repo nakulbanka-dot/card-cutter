@@ -13,10 +13,15 @@
  *   article  does the piece cover the topic at all
  *   density  are the terms throughout, or one passing reference
  *
- * What it deliberately does NOT measure is whether the source argues your
- * side. A piece titled "why nuclear is not the answer" matches a pro-nuclear
- * query almost perfectly on every component here. Direction needs the trained
- * ranker; this is topical fit only.
+ * Direction — whether the source argues your side — is the fifth component,
+ * `support`, and it comes from the trained ranker. Without it the four
+ * keyword components cannot tell a supporting source from an opposing one: a
+ * piece titled "why nuclear is not the answer" matches a pro-nuclear query
+ * almost perfectly on every one of them.
+ *
+ * It stays a single headline number. Direction and topic fail differently,
+ * but a debater wants one figure to sort by, so the split lives in the
+ * breakdown rather than in a second score to compare.
  */
 
 export interface MatchBreakdown {
@@ -24,13 +29,27 @@ export interface MatchBreakdown {
   passage: number;
   article: number;
   density: number;
-  /** Weighted total, 0-1. */
+  /**
+   * Does the source argue the side the tag wanted. Undefined until a trained
+   * ranker is available, in which case the topical components carry the score
+   * on their own.
+   */
+  support?: number;
+  /** Weighted total, 0-1. The one number shown. */
   score: number;
 }
 
-/** Weights sum to 1. Title and passage carry most of it — an article can
- *  mention your terms in passing without being about them. */
-const WEIGHTS = { title: 0.3, passage: 0.4, article: 0.2, density: 0.1 };
+/**
+ * Weights sum to 1 in both modes.
+ *
+ * With a support signal, direction takes the largest single share — it is the
+ * thing keyword matching gets wrong, and the reason a source arguing the
+ * opposite can top the results today.
+ */
+const KEYWORD_ONLY = { title: 0.3, passage: 0.4, article: 0.2, density: 0.1 };
+const WITH_SUPPORT = {
+  support: 0.35, title: 0.2, passage: 0.25, article: 0.13, density: 0.07,
+};
 
 /** Terms per thousand words at which density stops earning credit. */
 const DENSITY_CEILING = 12;
@@ -69,6 +88,8 @@ function coverage(terms: string[], text: string): number {
 export function matchScore(
   terms: string[],
   { title, passage, article }: { title: string; passage: string; article: string },
+  /** Probability from the trained ranker that this supports the tag. */
+  support?: number,
 ): MatchBreakdown {
   const lowerTerms = terms.map((t) => t.toLowerCase()).filter(Boolean);
   if (lowerTerms.length === 0) {
@@ -89,17 +110,24 @@ export function matchScore(
   const perThousand = (hits / words) * 1000;
   const density = Math.min(1, perThousand / DENSITY_CEILING);
 
-  const score =
-    titleScore * WEIGHTS.title +
-    passageScore * WEIGHTS.passage +
-    articleScore * WEIGHTS.article +
-    density * WEIGHTS.density;
+  const hasSupport = typeof support === "number" && Number.isFinite(support);
+  const w = hasSupport ? WITH_SUPPORT : KEYWORD_ONLY;
+
+  let score =
+    titleScore * w.title +
+    passageScore * w.passage +
+    articleScore * w.article +
+    density * w.density;
+  if (hasSupport) {
+    score += Math.max(0, Math.min(1, support)) * WITH_SUPPORT.support;
+  }
 
   return {
     title: titleScore,
     passage: passageScore,
     article: articleScore,
     density,
+    ...(hasSupport ? { support: Math.max(0, Math.min(1, support)) } : {}),
     // Clamp defensively: a future weight change must not produce 103%.
     score: Math.max(0, Math.min(1, score)),
   };
