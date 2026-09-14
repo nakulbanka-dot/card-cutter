@@ -82,34 +82,75 @@ function parseParagraphs(xml: string): Para[] {
 
 type Kind = "tag" | "cite" | "body" | "structure" | "skip";
 
-/** Cites carry a year and usually a name or URL; tags carry neither. */
+/**
+ * Verbatim writes tags as Heading4. That is the single most reliable signal in
+ * a real file — measured across this corpus, Heading4 appears hundreds of times
+ * per handful of files while the "Tag" style appears twice. Cites, by contrast,
+ * usually carry no style at all and often no year ("Valovic this month"), so
+ * they cannot be identified by their text; they are identified by sitting
+ * directly between a tag and its body.
+ */
+const TAG_STYLES = /^(heading4|h4|tag|cardtag)$/;
+const STRUCTURE_STYLES = /^(heading[1-3]|h[1-3])$/;
+
+/**
+ * A full debate cite — author, credential, outlet, date, URL — routinely runs
+ * past any sane length cutoff, so length alone would classify it as body text
+ * and swallow it into the card. Identify it by what it contains instead.
+ */
 function looksLikeCite(text: string): boolean {
-  const t = text.trim();
-  if (!t) return false;
-  if (/https?:\/\//.test(t)) return true;
-  // "Chen 24", "Smith '19", "(2026)", "Mar. 12, 2026"
-  return /\b(19|20)\d{2}\b/.test(t) || /\b[A-Z][a-z]+\s+'?\d{2}\b/.test(t);
+  return (
+    /\b(19|20)\d{2}\b/.test(text) ||
+    /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(text) ||
+    /https?:\/\//.test(text) ||
+    /\[/.test(text) ||
+    /\b(professor|senior fellow|fellow at|analyst|director|reporter|correspondent|published|ph\.?d|j\.?d\.)\b/i.test(
+      text,
+    )
+  );
 }
 
-function classify(p: Para): Kind {
-  const text = p.text.trim();
-  if (!text) return "skip";
+/** Verbatim leaves editing markers in the text; they are not content. */
+function isNoise(text: string): boolean {
+  const t = text.trim();
+  return !t || /^<<.*>>$/.test(t) || /^[-=_*#\s]+$/.test(t);
+}
 
-  const style = p.style.toLowerCase();
-  if (/^heading[1-3]$|^h[1-3]$/.test(style)) return "structure";
-  if (style.includes("tag")) return "tag";
+function classify(
+  p: Para,
+  state: { hasTag: boolean; hasCite: boolean; hasBody: boolean },
+  strict: boolean,
+): Kind {
+  const text = p.text.trim();
+  if (isNoise(text)) return "skip";
+
+  const style = p.style.toLowerCase().replace(/\s+/g, "");
+  if (STRUCTURE_STYLES.test(style)) return "structure";
+  if (TAG_STYLES.test(style)) return "tag";
   if (style.includes("cite")) return "cite";
 
-  const hasMarking = p.runs.some((r) => r.underlined || r.highlighted);
+  const marked = p.runs.some((r) => r.underlined || r.highlighted);
 
-  // A marked or long paragraph is the card body. Underlining is the strongest
-  // signal there is — nobody underlines a tag.
-  if (hasMarking || text.length > 250) return "body";
+  // The cite sits between the tag and the body, and is never marked up. Check
+  // this before the length rule, or a long cite gets eaten as body text.
+  if (!marked && state.hasTag && !state.hasCite && !state.hasBody && looksLikeCite(text)) {
+    return "cite";
+  }
 
-  if (looksLikeCite(text)) return "cite";
-  if (p.runs.some((r) => r.bold) || text.length < 250) return "tag";
+  // Marked or long: card body. Underlining and highlighting are the strongest
+  // signals available — nobody marks up a tag.
+  if (marked || text.length > 250) return "body";
 
-  return "body";
+  // Short and unmarked. Directly after a tag with no body yet, it is the cite.
+  // Anywhere else it is an analytic, a block header, or a stray line — which is
+  // exactly the material that used to be promoted into thousands of fake cards.
+  if (state.hasTag && !state.hasCite && !state.hasBody) return "cite";
+
+  // Loose pass only: some files come from templates that never applied
+  // Heading4, so a short unmarked line opening a card is allowed to be the tag.
+  if (!strict && !state.hasTag) return "tag";
+
+  return "skip";
 }
 
 /** Concatenate body paragraphs, tracking where the marked runs land. */
@@ -136,8 +177,7 @@ function buildBody(paras: Para[]): {
   return { body, underlines, highlights };
 }
 
-export function parseCardsFromDocxXml(xml: string, source: string): ParsedCard[] {
-  const paras = parseParagraphs(xml);
+function collect(paras: Para[], source: string, strict: boolean): ParsedCard[] {
   const cards: ParsedCard[] = [];
 
   let tag = "";
@@ -145,24 +185,20 @@ export function parseCardsFromDocxXml(xml: string, source: string): ParsedCard[]
   let bodyParas: Para[] = [];
 
   const flush = () => {
-    // A card needs a tag and a body; a stray heading isn't a card.
-    if (!tag || bodyParas.length === 0) {
-      tag = "";
-      cite = "";
-      bodyParas = [];
-      return;
-    }
-    const { body, underlines, highlights } = buildBody(bodyParas);
-    if (body.trim().length >= 100) {
-      cards.push({
-        tag: tag.trim(),
-        cite: cite.trim(),
-        body,
-        underlines,
-        highlights,
-        sourceUrl: urlFromCite(cite),
-        source,
-      });
+    // A card is a tag plus a body. Anything missing either is not a card.
+    if (tag && bodyParas.length > 0) {
+      const { body, underlines, highlights } = buildBody(bodyParas);
+      if (body.trim().length >= 150) {
+        cards.push({
+          tag: tag.trim(),
+          cite: cite.trim(),
+          body,
+          underlines,
+          highlights,
+          sourceUrl: urlFromCite(cite),
+          source,
+        });
+      }
     }
     tag = "";
     cite = "";
@@ -170,18 +206,18 @@ export function parseCardsFromDocxXml(xml: string, source: string): ParsedCard[]
   };
 
   for (const p of paras) {
-    switch (classify(p)) {
+    const state = { hasTag: Boolean(tag), hasCite: Boolean(cite), hasBody: bodyParas.length > 0 };
+    switch (classify(p, state, strict)) {
       case "tag":
-        // A new tag means the previous card is finished.
-        if (bodyParas.length > 0) flush();
-        tag = tag ? `${tag} ${p.text}` : p.text;
+        flush();
+        tag = p.text;
         break;
       case "cite":
-        if (bodyParas.length > 0) flush();
         cite = cite ? `${cite} ${p.text}` : p.text;
         break;
       case "body":
-        bodyParas.push(p);
+        // A body with no tag above it belongs to no card.
+        if (tag) bodyParas.push(p);
         break;
       case "structure":
         flush();
@@ -193,6 +229,18 @@ export function parseCardsFromDocxXml(xml: string, source: string): ParsedCard[]
   flush();
 
   return cards;
+}
+
+/**
+ * Strict first — a styled Heading4 tag is the reliable signal, and requiring it
+ * keeps analytics and block headers from being promoted into fake cards. Only
+ * if a document yields nothing that way do we fall back to shape alone, which
+ * recovers files whose template never applied the styles.
+ */
+export function parseCardsFromDocxXml(xml: string, source: string): ParsedCard[] {
+  const paras = parseParagraphs(xml);
+  const strict = collect(paras, source, true);
+  return strict.length > 0 ? strict : collect(paras, source, false);
 }
 
 /** Parse a .docx file's bytes. */
