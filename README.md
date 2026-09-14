@@ -10,6 +10,11 @@ card — your terms highlighted, nav junk stripped.
 tier covers the search and extract calls it makes, so there is nothing to sign
 up for and nothing to pay.
 
+## Live
+
+Not deployed yet. [DEPLOY.md](DEPLOY.md) has the steps — note that GitHub
+Pages cannot host this, and why.
+
 ## Setup
 
 ```bash

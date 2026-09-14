@@ -11,6 +11,12 @@ import path from "node:path";
  *
  * JSONL on local disk: append-only, greppable, trivially loadable by any
  * training script, and it never leaves your machine.
+ *
+ * A deployed copy has no writable disk, and serverless filesystems are wiped
+ * between invocations anyway. There the log is disabled outright rather than
+ * written somewhere that silently disappears — a training set you believe you
+ * are collecting and are not is worse than none. Set CARD_CUTTER_COLLECT=1 on
+ * a host with real storage to turn it back on.
  */
 
 export type Action = "cut" | "reject" | "shown";
@@ -52,9 +58,29 @@ export interface FeedbackRow {
 const DATA_DIR = path.join(process.cwd(), "data");
 const LOG = path.join(DATA_DIR, "feedback.jsonl");
 
-export async function logFeedback(row: FeedbackRow): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await appendFile(LOG, JSON.stringify(row) + "\n", "utf8");
+/**
+ * Collection is on locally and off in deployment unless explicitly enabled.
+ * Vercel, Netlify and similar set VERCEL / NETLIFY in the environment.
+ */
+export function collectionEnabled(): boolean {
+  if (process.env.CARD_CUTTER_COLLECT === "1") return true;
+  if (process.env.CARD_CUTTER_COLLECT === "0") return false;
+  const serverless = Boolean(
+    process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME,
+  );
+  return !serverless;
+}
+
+export async function logFeedback(row: FeedbackRow): Promise<boolean> {
+  if (!collectionEnabled()) return false;
+  try {
+    await mkdir(DATA_DIR, { recursive: true });
+    await appendFile(LOG, JSON.stringify(row) + "\n", "utf8");
+    return true;
+  } catch {
+    // A read-only filesystem must not turn a click into a 500.
+    return false;
+  }
 }
 
 /** Read the whole log. Small enough to hold in memory for a long time. */

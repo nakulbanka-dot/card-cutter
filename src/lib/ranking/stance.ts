@@ -17,13 +17,22 @@ import type { ZeroShotClassificationPipeline } from "@huggingface/transformers";
  * contradiction. Measured on the same example: supporting 0.734, opposing
  * 0.003, unrelated 0.166.
  *
- * Runs locally. The model is ~70MB, downloaded once and cached on disk.
+ * Two ways to run it:
  *
- * The runtime is loaded with a dynamic import rather than a static one. It
- * ships native ONNX binaries, and pulling those into the build graph made the
- * production build exceed the memory available on a normal laptop. Loading it
- * on first use keeps it out of the bundle entirely, and means the app still
- * builds and runs on a machine where the model is unavailable.
+ *   local   the ONNX model on this machine. Free, private, no network. The
+ *           runtime is ~600MB installed, which is far past any serverless
+ *           function limit, so this is the development path.
+ *   remote  the same model behind Hugging Face's inference API. Nothing to
+ *           bundle, so it deploys anywhere, at the cost of a network hop and
+ *           a free API token.
+ *
+ * Remote is used when HUGGINGFACE_API_KEY is set, local otherwise. Neither
+ * being available is fine — sources keep their keyword-only score, which is
+ * worse but honest.
+ *
+ * The local runtime is loaded by dynamic import rather than a static one. Its
+ * native ONNX binaries in the build graph made the production build exceed the
+ * memory available on a normal laptop.
  */
 
 const MODEL = "Xenova/nli-deberta-v3-xsmall";
@@ -33,10 +42,74 @@ const MAX_CHARS = 1200;
 
 let loading: Promise<ZeroShotClassificationPipeline> | null = null;
 let failed = false;
+/** Remote failures are usually transient; stop trying after a few in a row. */
+let remoteFailures = 0;
+const REMOTE_FAILURE_LIMIT = 5;
+
+function remoteToken(): string | undefined {
+  return process.env.HUGGINGFACE_API_KEY || undefined;
+}
+
+/**
+ * Score via Hugging Face's hosted copy of the same model.
+ *
+ * Returns null on any failure rather than a neutral number: a fabricated 0.5
+ * would be indistinguishable from a real measurement in the breakdown.
+ */
+async function scoreRemote(
+  text: string,
+  labels: string[],
+): Promise<number[] | null> {
+  const token = remoteToken();
+  if (!token || remoteFailures >= REMOTE_FAILURE_LIMIT) return null;
+
+  try {
+    const res = await fetch(
+      `https://api-inference.huggingface.co/models/${MODEL}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inputs: text,
+          parameters: { candidate_labels: labels, multi_label: true },
+          // The model sleeps when idle; ask the API to wait rather than 503.
+          options: { wait_for_model: true },
+        }),
+        signal: AbortSignal.timeout(20_000),
+      },
+    );
+    if (!res.ok) {
+      remoteFailures++;
+      return null;
+    }
+
+    const json = (await res.json()) as { labels?: string[]; scores?: number[] };
+    if (!json.labels || !json.scores) {
+      remoteFailures++;
+      return null;
+    }
+
+    remoteFailures = 0;
+    // The API reorders by score; put them back in the order asked for.
+    return labels.map((l) => {
+      const i = json.labels!.indexOf(l);
+      return i === -1 ? 0 : json.scores![i];
+    });
+  } catch {
+    remoteFailures++;
+    return null;
+  }
+}
 
 async function getModel(): Promise<ZeroShotClassificationPipeline | null> {
   // One failure means no model on this machine; don't retry on every request.
   if (failed) return null;
+  // Hosted mode is handled before this is reached; don't pull 600MB into a
+  // serverless function that will only be killed for it.
+  if (remoteToken()) return null;
   if (!loading) {
     loading = import("@huggingface/transformers").then(
       ({ pipeline }) =>
@@ -75,8 +148,7 @@ export async function scoreStance(
   /** The headline. Carries the article's thesis, which the passage may not. */
   title = "",
 ): Promise<StanceResult | null> {
-  const model = await getModel();
-  if (!model || !claim.trim() || !passage.trim()) return null;
+  if (!claim.trim() || !passage.trim()) return null;
 
   // Measured: a paragraph from an article arguing AGAINST the claim scored
   // 0.968 on its own, because it was describing the position it goes on to
@@ -87,6 +159,17 @@ export async function scoreStance(
     : passage.slice(0, MAX_CHARS);
   const supports = `This supports the claim that ${claim}.`;
   const contradicts = `This contradicts the claim that ${claim}.`;
+
+  // Hosted first when configured — the deployed app has no room for the
+  // local runtime.
+  if (remoteToken()) {
+    const scores = await scoreRemote(text, [supports, contradicts]);
+    if (scores) return { support: scores[0] };
+    // Fall through: a dev machine may still have the local model.
+  }
+
+  const model = await getModel();
+  if (!model) return null;
 
   try {
     const out = await model(text, [supports, contradicts]);

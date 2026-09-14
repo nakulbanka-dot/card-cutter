@@ -7,8 +7,10 @@ export async function POST(request: Request) {
     if (!row?.url || !row?.action) {
       return Response.json({ error: "url and action are required" }, { status: 400 });
     }
-    await logFeedback({ ...row, ts: new Date().toISOString() });
-    return Response.json({ ok: true });
+    const stored = await logFeedback({ ...row, ts: new Date().toISOString() });
+    // `stored: false` means collection is off for this deployment, not that
+    // anything went wrong. The button still works either way.
+    return Response.json({ ok: true, stored });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     return Response.json({ error: message }, { status: 500 });
