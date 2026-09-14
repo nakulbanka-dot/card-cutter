@@ -5,6 +5,7 @@ import { mapWithConcurrency } from "../concurrency";
 import { parseQuery, searchVariants } from "../terms";
 import { rankPassages, type Passage } from "../passages";
 import { matchScore, type MatchBreakdown } from "../match-score";
+import { scoreStanceBatch } from "../ranking/stance";
 import { fetchMetadata } from "../metadata";
 import { toMLA, type ArticleMetadata } from "../citation";
 import { extract } from "./extract";
@@ -174,6 +175,25 @@ export async function findEvidence(
         article: source.body,
       }),
     };
+  });
+
+  // Stance: does each source argue the claim, or against it? This is what
+  // keyword matching cannot see, and it runs on the best passage of each
+  // source rather than every passage — about 200ms apiece.
+  const stances = await scoreStanceBatch(
+    parsed.searchQuery,
+    found.map((f) => ({ title: f.title, text: f.passages[0]?.text ?? "" })),
+    parsed.wantsRefutation,
+  );
+
+  found.forEach((f, i) => {
+    const support = stances[i];
+    if (support === null) return; // model unavailable — keep keyword-only score
+    f.match = matchScore(
+      parsed.terms,
+      { title: f.title, passage: f.passages[0]?.text ?? "", article: f.body },
+      support,
+    );
   });
 
   // Sources whose best paragraph scored highest go first.
