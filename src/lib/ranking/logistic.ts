@@ -54,6 +54,14 @@ export interface TrainOptions {
   /** Fraction held out for reporting. */
   testSplit?: number;
   seed?: number;
+  /**
+   * Group id per row. Rows sharing a group are kept on the same side of the
+   * split. Paragraphs mined from one article are near-duplicates of each
+   * other — same outlet, same subject, same prose style — so splitting them
+   * across train and test would let the model recognise the article rather
+   * than learn the task, and report an accuracy it has not earned.
+   */
+  groups?: string[];
 }
 
 /** Deterministic PRNG so a rerun on the same data gives the same model. */
@@ -80,15 +88,45 @@ export function train(
   // Shuffle before splitting; the corpus arrives grouped by year and event, so
   // an unshuffled tail split would test on a different distribution entirely.
   const rand = rng(seed);
-  const order = rawX.map((_, i) => i);
-  for (let i = order.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
+  const { groups } = opts;
 
-  const cut = Math.floor(order.length * (1 - testSplit));
-  const trainIdx = order.slice(0, cut);
-  const testIdx = order.slice(cut);
+  let trainIdx: number[];
+  let testIdx: number[];
+
+  if (groups) {
+    // Shuffle whole groups, then assign groups to sides until the test share
+    // is met. Keeps every row of an article together.
+    const byGroup = new Map<string, number[]>();
+    groups.forEach((g, i) => {
+      const list = byGroup.get(g) ?? [];
+      list.push(i);
+      byGroup.set(g, list);
+    });
+
+    const keys = [...byGroup.keys()];
+    for (let i = keys.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [keys[i], keys[j]] = [keys[j], keys[i]];
+    }
+
+    const target = Math.floor(rawX.length * testSplit);
+    testIdx = [];
+    trainIdx = [];
+    for (const k of keys) {
+      const rows = byGroup.get(k)!;
+      if (testIdx.length < target) testIdx.push(...rows);
+      else trainIdx.push(...rows);
+    }
+  } else {
+    const order = rawX.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const cut = Math.floor(order.length * (1 - testSplit));
+    trainIdx = order.slice(0, cut);
+    testIdx = order.slice(cut);
+  }
 
   // Fit the scaler on training rows only — fitting on everything leaks the
   // test distribution into the model.

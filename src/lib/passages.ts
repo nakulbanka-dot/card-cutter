@@ -1,3 +1,5 @@
+import { isProse } from "./ranking/junk-filter.ts";
+
 /**
  * Ranking paragraphs, without a model.
  *
@@ -84,6 +86,11 @@ export function rankPassages(
     const lower = text.toLowerCase();
     const matched = lowerTerms.filter((t) => lower.includes(t));
     if (matched.length === 0) return;
+
+    // Citation strings and tables can be dense with your terms while being
+    // unreadable aloud. The learned filter catches those at the bottom of its
+    // range, which is the one thing it does well.
+    if (!isProse(lowerTerms, text)) return;
 
     // Distinct terms matter more than repetition — a paragraph touching three
     // of your concepts beats one that says the same word five times.

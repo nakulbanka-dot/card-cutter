@@ -71,3 +71,23 @@ test("auc is 1 for a perfect ranking and 0.5 for a coin flip", () => {
   const tied = Array.from({ length: 100 }, (_, i) => ({ p: 0.5, y: i % 2 }));
   assert.ok(Math.abs(auc(tied) - 0.5) < 0.06);
 });
+
+test("grouped split keeps every row of a group on one side", () => {
+  const X: number[][] = [];
+  const y: number[] = [];
+  const groups: string[] = [];
+  for (let g = 0; g < 40; g++) {
+    for (let r = 0; r < 5; r++) {
+      const v = new Array(FEATURE_NAMES.length).fill(0).map(() => Math.random());
+      v[0] = g % 2 === 0 ? 1 : -1;
+      X.push(v);
+      y.push(g % 2 === 0 ? 1 : 0);
+      groups.push(`article-${g}`);
+    }
+  }
+  const m = train(X, y, { groups, epochs: 50 });
+  // Every group is 5 rows, so a clean grouped split leaves multiples of 5.
+  assert.equal(m.metrics.testRows % 5, 0, "a group was split across sides");
+  assert.equal(m.metrics.trainRows % 5, 0, "a group was split across sides");
+  assert.equal(m.metrics.trainRows + m.metrics.testRows, 200);
+});

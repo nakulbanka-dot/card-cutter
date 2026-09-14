@@ -138,3 +138,19 @@ test("a short article still yields a passage rather than nothing", () => {
   const { terms } = parseQuery("nuclear power climate");
   assert.ok(rankPassages(article, terms, 4).length > 0);
 });
+
+test("citation strings and tables are filtered out as non-prose", () => {
+  const { terms } = parseQuery("property rights transplantation law");
+  const article = [
+    "17 Russell v. Freeman, 202 Okl. 417, 214 P.2d 439, 441-42 (1950); Gade v. Loffler, 171 Okl. 313, 42 P.2d 815, 818 (1935); McNeal v. Baker, 135 Okl. 159, 274 P. 655, 656 (1929); Smith v. Jones, 110 Okl. 22, 233 P. 190, 192 (1925) (property rights in transplantation law).",
+    "Compensation systems would change the nature of altruistic organ donation under current property rights doctrine. The theory states that people may be more willing to provide organs if they receive compensation, and several types of transplantation law reform have been proposed to that end.",
+    "The theory has been tested in a handful of jurisdictions where property rights over donated tissue were clarified by statute, and the results in transplantation law have been mixed but instructive for policymakers considering similar reform.",
+  ].join("\n\n");
+
+  const top = rankPassages(article, terms, 3);
+  assert.ok(top.length > 0, "real prose should survive");
+  assert.ok(
+    !top.some((p) => p.text.startsWith("17 Russell v. Freeman")),
+    "a string of case citations is not a cuttable passage",
+  );
+});
