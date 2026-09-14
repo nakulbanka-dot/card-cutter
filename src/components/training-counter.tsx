@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import stats from "@/data/training-stats.json";
+import { countUpValue } from "@/lib/ease";
 
 /**
  * What the ranking has been built from.
@@ -17,6 +18,7 @@ function useCountUp(target: number, durationMs = 1400) {
   const [value, setValue] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
   const started = useRef(false);
+  const timeout = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const el = ref.current;
@@ -34,12 +36,17 @@ function useCountUp(target: number, durationMs = 1400) {
 
       const start = performance.now();
       const tick = (now: number) => {
-        const t = Math.min(1, (now - start) / durationMs);
-        // Ease out, so it lands rather than stopping dead.
-        setValue(Math.round(target * (1 - Math.pow(1 - t, 3))));
-        if (t < 1) requestAnimationFrame(tick);
+        const elapsed = now - start;
+        setValue(countUpValue(target, elapsed, durationMs));
+        if (elapsed < durationMs) requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
+
+      // requestAnimationFrame stops firing when the tab or pane is hidden, so
+      // scrolling away mid-count leaves the number frozen somewhere arbitrary
+      // and it never recovers. Timers still fire, so this guarantees it lands
+      // on the real figure whatever happens to the animation.
+      timeout.current = window.setTimeout(() => setValue(target), durationMs + 200);
     };
 
     const io = new IntersectionObserver(
@@ -47,7 +54,18 @@ function useCountUp(target: number, durationMs = 1400) {
       { threshold: 0.3 },
     );
     io.observe(el);
-    return () => io.disconnect();
+
+    // The observer is an enhancement, not a dependency. If it never fires —
+    // a hidden tab, an offscreen pane, a browser that throttles it — the
+    // figure still has to appear. Showing "0 debate cards analysed" would be
+    // worse than showing no animation at all.
+    const fallback = window.setTimeout(animate, 2500);
+
+    return () => {
+      io.disconnect();
+      window.clearTimeout(fallback);
+      if (timeout.current !== undefined) window.clearTimeout(timeout.current);
+    };
   }, [target, durationMs]);
 
   return { value, ref };
