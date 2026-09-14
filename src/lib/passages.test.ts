@@ -86,3 +86,11 @@ test("highlight survives regex metacharacters in terms", () => {
   const parts = highlight("costs (a lot) more", ["(a lot)"]);
   assert.equal(parts.map((p) => p.text).join(""), "costs (a lot) more");
 });
+
+test("highlight marks each term only once, so passages don't fill with yellow", () => {
+  const text = "Nuclear power beats nuclear alternatives because nuclear is dense.";
+  const parts = highlight(text, ["nuclear"]);
+  const hits = parts.filter((p) => p.hit);
+  assert.equal(hits.length, 1, "only the first occurrence should be marked");
+  assert.equal(parts.map((p) => p.text).join(""), text);
+});

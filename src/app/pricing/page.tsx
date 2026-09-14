@@ -138,7 +138,7 @@ export default function PricingPage() {
               href={tier.href}
               className={`mt-5 rounded-md px-4 py-2 text-center text-sm font-medium transition-opacity hover:opacity-90 ${
                 tier.featured
-                  ? "bg-accent text-white"
+                  ? "bg-accent text-bg"
                   : "border border-border text-fg hover:bg-bg"
               }`}
             >

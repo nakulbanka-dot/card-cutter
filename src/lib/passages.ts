@@ -92,7 +92,16 @@ export function rankPassages(
   return scored.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
-/** Split a passage into runs for highlighting matched terms in the UI. */
+/**
+ * Split a passage into runs for highlighting matched terms.
+ *
+ * Only the FIRST occurrence of each term is marked. In an article about
+ * nuclear power the word "nuclear" appears in every other sentence, and
+ * marking all of them produced 60 highlights on a single source — at which
+ * point nothing is highlighted, because everything is. One mark per term
+ * still answers "why did this match" without turning the passage into
+ * a wall of yellow.
+ */
 export function highlight(
   text: string,
   terms: string[],
@@ -107,9 +116,14 @@ export function highlight(
 
   const re = new RegExp(`(${escaped.join("|")})`, "gi");
   const parts: { text: string; hit: boolean }[] = [];
+  const seen = new Set<string>();
   let last = 0;
 
   for (const m of text.matchAll(re)) {
+    const key = m[0].toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
     if (m.index > last) parts.push({ text: text.slice(last, m.index), hit: false });
     parts.push({ text: m[0], hit: true });
     last = m.index + m[0].length;
