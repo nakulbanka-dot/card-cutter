@@ -220,5 +220,18 @@ perfectly while using none of your words never reaches the model, because
 keywords never surface it. Fixing that needs semantic retrieval over the whole
 article rather than term matching, which is the next honest step.
 
-Cost of reading: roughly 200ms per paragraph, so about 13 seconds on a
-64-paragraph query. That is the bulk of the wait.
+## What each part costs
+
+Reading costs **no Claude tokens**. It is an NLI cross-encoder
+(`Xenova/nli-deberta-v3-xsmall`), which runs either locally or on Hugging
+Face's free tier. The bill for it is time, not money: ~200ms a paragraph, so
+about 8 seconds across a 40-paragraph query, which is most of the wait.
+
+Claude tokens are spent in exactly one place — the paid `/api/cut` path, in
+expand, cut and underline. That path defaults to Haiku: about $0.013 a card
+against $0.026 on Sonnet. `CARD_CUTTER_MODEL=claude-sonnet-5` buys the
+judgment back.
+
+The shortlist is five candidates per article, down from eight. Reading is the
+dominant cost and the last few candidates were rarely chosen, so the gain did
+not pay for the time.

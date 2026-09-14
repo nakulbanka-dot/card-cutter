@@ -3,21 +3,27 @@
  */
 
 /**
- * Default cutting model.
+ * Default cutting model — the only place this app spends Claude tokens.
  *
- * Sonnet, not Opus. Cutting is high-volume — every source in every query is a
- * full-length call — so the per-card cost decides whether this is viable at
- * all. Sonnet holds up on "which paragraph is the warrant" while costing a
- * fraction of Opus per token, and the ranker is being trained to do the
- * filtering that would otherwise need a stronger model.
+ * Haiku, for cost. Cutting is high volume: every source in every query is a
+ * full-length call, so per-card cost decides whether the paid tier is viable.
+ * Haiku roughly halves what Sonnet costs per card ($0.013 against $0.026 on a
+ * 5,500-token article), and the work ahead of it now does more of the
+ * filtering — the model only ever sees passages that have already been read
+ * and ranked.
  *
- * Override with CARD_CUTTER_MODEL. `claude-haiku-4-5` is the cheap tier for
- * bulk work and smoke tests.
+ * Set CARD_CUTTER_MODEL=claude-sonnet-5 if the judgment turns out to matter
+ * more than the saving. Nothing else needs to change; reasoning.ts already
+ * sends each model the parameters it accepts.
+ *
+ * NOTE: reading passages does not run on Claude and costs no tokens. That is
+ * an NLI cross-encoder (see ranking/stance.ts), free either locally or on
+ * Hugging Face's free tier.
  */
-export const CUTTING_MODEL = "claude-sonnet-5" as const;
+export const CUTTING_MODEL = "claude-haiku-4-5" as const;
 
-/** Cheapest tier, for bulk passes and pre-filtering. */
-export const BULK_MODEL = "claude-haiku-4-5" as const;
+/** Where more judgment is worth paying for. Not the default. */
+export const STRONG_MODEL = "claude-sonnet-5" as const;
 
 /** Ceiling per cutting call. Streaming is required above ~32k. */
 export const MAX_TOKENS = 16_000;

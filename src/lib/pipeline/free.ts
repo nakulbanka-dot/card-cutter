@@ -50,12 +50,15 @@ const PASSAGES_PER_SOURCE = 4;
 /**
  * Candidates the model reads before choosing.
  *
- * Keyword scoring is now only a shortlist: it is cheap and it is bad at
- * judgment, so it narrows each article to a handful of plausible paragraphs
- * and the model decides which of those actually argue the claim. Reading
- * every paragraph of every article would be better and far too slow.
+ * Keyword scoring is only a shortlist: it is cheap and it is bad at judgment,
+ * so it narrows each article to a handful of plausible paragraphs and the
+ * model decides which of those actually argue the claim. Reading every
+ * paragraph of every article would be better and far too slow.
+ *
+ * Five rather than eight. Reading is ~200ms a paragraph and the gain from the
+ * last few candidates was small — they were rarely chosen.
  */
-const CANDIDATES_PER_SOURCE = 8;
+const CANDIDATES_PER_SOURCE = 5;
 
 function domainOf(url: string): string {
   try {
