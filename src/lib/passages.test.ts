@@ -47,9 +47,11 @@ test("ranks the evidence paragraph above the irrelevant one", () => {
 
   assert.ok(top.length > 0, "expected at least one passage");
   assert.match(top[0].text, /France generates roughly 70 percent/);
+  // Expansion may append a neighbour, but an off-topic paragraph must never be
+  // what a passage is selected for.
   assert.ok(
-    !top.some((p) => p.text.includes("cafes were full")),
-    "irrelevant paragraph should not surface",
+    !top[0].text.startsWith("The weather was pleasant"),
+    "irrelevant paragraph should never seed a passage",
   );
 });
 
@@ -93,4 +95,46 @@ test("highlight marks each term only once, so passages don't fill with yellow", 
   const hits = parts.filter((p) => p.hit);
   assert.equal(hits.length, 1, "only the first occurrence should be marked");
   assert.equal(parts.map((p) => p.text).join(""), text);
+});
+
+test("passages span at least two paragraphs", () => {
+  const article = [
+    "Nuclear power is contested in climate policy circles for reasons that are largely political rather than technical in nature and origin, a pattern that has held across several decades of energy policy debate in most Western countries.",
+    "France generates roughly 70 percent of its electricity from nuclear reactors, and its grid carbon intensity is about one fifth the European average, a gap that has persisted for many years without any serious challenge.",
+    "That pace has not been matched by any country relying on renewables alone, which is the comparison that actually matters for policy and the one most often left out of the discussion entirely.",
+    "The weather in Paris was pleasant that spring and the cafes along the river were full of people enjoying it, which has nothing to do with anything else written on this page at all.",
+  ].join("\n\n");
+
+  const { terms } = parseQuery("nuclear power climate electricity");
+  const top = rankPassages(article, terms, 2);
+
+  assert.ok(top.length > 0);
+  for (const p of top) {
+    assert.ok(p.paragraphCount >= 2, `passage had ${p.paragraphCount} paragraph(s)`);
+    // Offsets must still slice back to exactly the passage text.
+    assert.equal(article.slice(p.start, p.end), p.text);
+  }
+});
+
+test("passages do not overlap each other", () => {
+  const article = Array.from({ length: 8 }, (_, i) =>
+    `Paragraph ${i} discusses nuclear power and climate policy at sufficient length to clear the minimum character threshold for a real passage.`,
+  ).join("\n\n");
+
+  const { terms } = parseQuery("nuclear power climate");
+  const top = rankPassages(article, terms, 3);
+
+  const sorted = [...top].sort((a, b) => a.start - b.start);
+  for (let i = 1; i < sorted.length; i++) {
+    assert.ok(sorted[i].start >= sorted[i - 1].end, "passages overlapped");
+  }
+});
+
+test("a short article still yields a passage rather than nothing", () => {
+  const article = [
+    "Nuclear power supplies a large share of French electricity today.".repeat(4),
+    "Climate policy debates turn on that comparison more than on anything else.".repeat(3),
+  ].join("\n\n");
+  const { terms } = parseQuery("nuclear power climate");
+  assert.ok(rankPassages(article, terms, 4).length > 0);
 });

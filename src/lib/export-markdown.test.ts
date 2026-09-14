@@ -31,6 +31,7 @@ const RESULT: FindResponse = {
           end: 74,
           score: 1.2,
           matched: ["nuclear"],
+          paragraphCount: 2,
         },
       ],
     },

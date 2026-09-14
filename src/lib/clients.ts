@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { tavily } from "@tavily/core";
 import { getEnv, requireAnthropicKey } from "./env";
+import { CUTTING_MODEL } from "./models";
 
 let anthropicClient: Anthropic | undefined;
 let tavilyClient: ReturnType<typeof tavily> | undefined;
@@ -24,5 +25,5 @@ export function tavilyClientInstance(): ReturnType<typeof tavily> {
 
 /** Model the cutting passes run on, overridable via env. */
 export function cuttingModel(): string {
-  return getEnv().CARD_CUTTER_MODEL ?? "claude-opus-5";
+  return getEnv().CARD_CUTTER_MODEL ?? CUTTING_MODEL;
 }
