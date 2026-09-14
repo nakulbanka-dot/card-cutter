@@ -1,26 +1,81 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * Debate is a text discipline, so the design is typographic: a serif for
+ * anything quoted from a source, a sans for everything that is interface.
+ * One accent colour only — the same yellow used to mark matched terms — so
+ * that highlighting reads as meaning rather than decoration.
+ */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root {
+  --bg: #fbfaf8;
+  --surface: #ffffff;
+  --fg: #1a1a18;
+  --muted: #6b6a66;
+  --faint: #9a9893;
+  --border: #e3e0da;
+  --accent: #1c4b7a;
+  --accent-soft: #eaf1f8;
+  --mark: #fdf0b8;
+  --mark-fg: #2a2513;
+  --warn: #8a6112;
+  --warn-soft: #fdf6e6;
+  --good: #2c6b45;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #121211;
+    --surface: #1a1a18;
+    --fg: #ededea;
+    --muted: #a3a19b;
+    --faint: #76746f;
+    --border: #2e2d2a;
+    --accent: #8fb8dd;
+    --accent-soft: #1b2732;
+    --mark: #55491d;
+    --mark-fg: #f7efd4;
+    --warn: #d3ac5e;
+    --warn-soft: #2a2314;
+    --good: #7dbb95;
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-mark: var(--mark);
+  --color-mark-fg: var(--mark-fg);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-good: var(--good);
+
+  --font-sans: var(--font-sans-stack);
+  --font-serif: var(--font-serif-stack);
+  --font-mono: var(--font-mono-stack);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans-stack), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Quoted source text — never interface text. */
+.prose-source {
+  font-family: var(--font-serif-stack), Georgia, serif;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+::selection {
+  background: var(--mark);
+  color: var(--mark-fg);
 }

@@ -6,11 +6,10 @@ import type { FoundSource, FindResponse } from "@/lib/pipeline/free";
 import type { Action, PassageFeatures } from "@/lib/feedback";
 
 /**
- * One source: MLA cite, then its best paragraphs.
+ * One source: its citation, then the paragraphs most likely to be cuttable.
  *
- * Every button here is also a training label. "Cut this" copies the passage
- * with its citation and records a positive; "Not useful" records a negative.
- * The ranker learns from ordinary use rather than a separate labeling session.
+ * The Cut / Not useful buttons also teach the ranking. Acting on a passage
+ * records what you chose, so results get better the more you use it.
  */
 export function SourceBlock({
   source,
@@ -71,9 +70,9 @@ export function SourceBlock({
   }
 
   return (
-    <article className="border-t border-neutral-300 pt-5 dark:border-neutral-700">
+    <article className="rounded-lg border border-border bg-surface p-5">
       <div className="flex items-baseline gap-2">
-        <span className="text-xs tabular-nums text-neutral-400">{index + 1}</span>
+        <span className="font-mono text-xs text-faint">{index + 1}</span>
         <h3 className="font-medium leading-snug">
           <a href={source.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
             {source.title}
@@ -81,8 +80,8 @@ export function SourceBlock({
         </h3>
       </div>
 
-      <div className="mt-1 pl-6">
-        <p className="font-serif text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+      <div className="mt-1">
+        <p className="prose-source text-xs text-muted">
           {source.mla}
         </p>
         <div className="mt-1 flex items-center gap-3">
@@ -92,25 +91,25 @@ export function SourceBlock({
               setCopiedCite(true);
               setTimeout(() => setCopiedCite(false), 1500);
             }}
-            className="text-xs text-neutral-500 underline decoration-dotted underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-200"
+            className="text-xs text-muted underline decoration-dotted underline-offset-2 hover:text-fg"
           >
             {copiedCite ? "Copied" : "Copy citation"}
           </button>
           {source.missingCiteFields.length > 0 && (
-            <span className="text-xs text-amber-700 dark:text-amber-500">
-              missing {source.missingCiteFields.join(", ")} — check the page
+            <span className="rounded bg-warn-soft px-1.5 py-0.5 text-xs text-warn">
+              check the {source.missingCiteFields.join(" and ")} on the page
             </span>
           )}
         </div>
       </div>
 
-      <div className="mt-3 space-y-4 pl-6">
+      <div className="mt-4 space-y-5">
         {source.passages.map((passage, i) => (
           <div key={i}>
-            <blockquote className="border-l-2 border-neutral-300 pl-3 font-serif text-[15px] leading-relaxed dark:border-neutral-700">
+            <blockquote className="prose-source border-l-2 border-border pl-4">
               {highlight(passage.text, result.terms).map((part, j) =>
                 part.hit ? (
-                  <mark key={j} className="bg-yellow-200/70 text-inherit dark:bg-yellow-500/30">
+                  <mark key={j} className="bg-mark text-mark-fg">
                     {part.text}
                   </mark>
                 ) : (
@@ -119,24 +118,24 @@ export function SourceBlock({
               )}
             </blockquote>
 
-            <div className="mt-1.5 flex items-center gap-3 pl-3">
+            <div className="mt-2 flex items-center gap-3 pl-4">
               {acted[i] === "cut" ? (
-                <span className="text-xs font-medium text-green-700 dark:text-green-500">
+                <span className="text-xs font-medium text-good">
                   Copied with citation
                 </span>
               ) : acted[i] === "reject" ? (
-                <span className="text-xs text-neutral-400">Marked not useful</span>
+                <span className="text-xs text-faint">Marked not useful</span>
               ) : (
                 <>
                   <button
                     onClick={() => cut(i)}
-                    className="rounded border border-neutral-300 px-2 py-1 text-xs font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+                    className="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:border-accent hover:text-accent"
                   >
                     Cut this
                   </button>
                   <button
                     onClick={() => record(i, "reject")}
-                    className="text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
+                    className="text-xs text-faint transition-colors hover:text-fg"
                   >
                     Not useful
                   </button>
@@ -147,16 +146,16 @@ export function SourceBlock({
         ))}
       </div>
 
-      <div className="mt-3 pl-6">
+      <div className="mt-4">
         <button
           onClick={() => setShowAll((v) => !v)}
-          className="text-xs text-neutral-500 underline decoration-dotted underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-200"
+          className="text-xs text-muted underline decoration-dotted underline-offset-2 hover:text-fg"
         >
           {showAll ? "Hide full article" : "Show full article"}
         </button>
 
         {showAll && (
-          <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-neutral-100 p-3 font-serif text-[13px] leading-relaxed dark:bg-neutral-900">
+          <pre className="prose-source mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-bg p-4 text-[13px]">
             {source.body}
           </pre>
         )}

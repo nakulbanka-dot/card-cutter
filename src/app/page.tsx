@@ -1,157 +1,156 @@
-"use client";
+import Link from "next/link";
 
-import { useState } from "react";
-import { SourceBlock } from "@/components/passage-list";
-import { toMarkdown } from "@/lib/export-markdown";
-import type { FindResponse } from "@/lib/pipeline/free";
+const STEPS = [
+  {
+    n: "01",
+    title: "Say what you want it to prove",
+    body: "One line, the way you'd write a tag. “Nuclear power solves warming.” Start with “answers to” and it looks for the other side instead.",
+  },
+  {
+    n: "02",
+    title: "It reads the whole article",
+    body: "Not search snippets — the full text, with the navigation, ads, and cookie banners stripped out. The quotable paragraph is almost never the one a search engine previews.",
+  },
+  {
+    n: "03",
+    title: "You get the passages, ranked",
+    body: "Best sources first, your terms highlighted, and the MLA citation already assembled from the page's own metadata. You make the call on what's actually cuttable.",
+  },
+];
 
 export default function Home() {
-  const [query, setQuery] = useState("");
-  const [result, setResult] = useState<FindResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const words = query.trim().split(/\s+/).filter(Boolean).length;
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim() || loading) return;
-
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setCopied(false);
-
-    try {
-      const res = await fetch("/api/find", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "something went wrong");
-      setResult(data as FindResponse);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function copyForClaude() {
-    if (!result) return;
-    await navigator.clipboard.writeText(toMarkdown(result));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  const passageCount =
-    result?.sources.reduce((n, s) => n + s.passages.length, 0) ?? 0;
-
   return (
-    <main className="mx-auto max-w-2xl px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">card cutter</h1>
-      <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-        State a position in five to ten words. Get the paragraphs worth cutting.
-      </p>
+    <main>
+      {/* Hero */}
+      <section className="mx-auto max-w-5xl px-6 pt-20 pb-16">
+        <div className="max-w-2xl">
+          <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
+            Evidence for debate,
+            <br />
+            <span className="text-accent">in one line.</span>
+          </h1>
 
-      <form onSubmit={onSubmit} className="mt-8">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="nuclear power solves climate change"
-          disabled={loading}
-          className="w-full rounded-md border border-neutral-300 bg-transparent px-4 py-3 outline-none placeholder:text-neutral-400 focus:border-neutral-900 disabled:opacity-60 dark:border-neutral-700 dark:focus:border-neutral-300"
-        />
+          <p className="mt-6 text-lg leading-relaxed text-muted">
+            Write what you want the card to say. Card Cutter finds the sources,
+            pulls the full text, and hands back the paragraphs worth cutting —
+            citation included.
+          </p>
 
-        <div className="mt-2 flex items-center justify-between text-xs text-neutral-500">
-          <span>
-            {words > 0 && `${words} word${words === 1 ? "" : "s"}`}
-            {words > 12 && " — try trimming it down"}
-          </span>
-          <button
-            type="submit"
-            disabled={loading || !query.trim()}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
-          >
-            {loading ? "Searching…" : "Find evidence"}
-          </button>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link
+              href="/cut"
+              className="rounded-md bg-fg px-5 py-2.5 text-sm font-medium text-bg transition-opacity hover:opacity-90"
+            >
+              Start cutting
+            </Link>
+            <Link
+              href="/pricing"
+              className="rounded-md border border-border px-5 py-2.5 text-sm font-medium transition-colors hover:bg-surface"
+            >
+              See plans
+            </Link>
+            <span className="text-sm text-faint">Free to use. No account.</span>
+          </div>
         </div>
+      </section>
 
-        <p className="mt-2 text-xs text-neutral-400">
-          Tip: start with &ldquo;answers to&rdquo; to get the other side. Runs
-          with no account; add a free Tavily key to raise the limits.
-        </p>
-      </form>
+      {/* What it looks like */}
+      <section className="border-y border-border bg-surface">
+        <div className="mx-auto max-w-5xl px-6 py-14">
+          <p className="text-xs font-medium uppercase tracking-wider text-faint">
+            What comes back
+          </p>
 
-      {loading && (
-        <p className="mt-10 text-sm text-neutral-500">
-          Searching and pulling full text. Usually 10–20 seconds.
-        </p>
-      )}
-
-      {error && (
-        <p className="mt-10 rounded-md border border-red-300 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:text-red-400">
-          {error}
-        </p>
-      )}
-
-      {result && (
-        <section className="mt-10">
-          {result.sources.length === 0 ? (
-            <p className="text-sm text-neutral-500">
-              Nothing usable came back. Try naming the specific policy, country,
-              or year you have in mind.
+          <div className="mt-5 rounded-lg border border-border bg-bg p-5">
+            <p className="text-sm font-medium">
+              France generates 70% of its power from nuclear
             </p>
-          ) : (
-            <>
-              <div className="flex items-center justify-between pb-4">
-                <p className="text-xs text-neutral-500">
-                  {passageCount} passage{passageCount === 1 ? "" : "s"} from{" "}
-                  {result.sources.length} source
-                  {result.sources.length === 1 ? "" : "s"}
-                  {result.wantsRefutation && " · against the claim"}
-                  {!result.usingKey && " · keyless"}
-                </p>
-                <button
-                  onClick={copyForClaude}
-                  className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
-                >
-                  {copied ? "Copied" : "Copy for Claude"}
-                </button>
-              </div>
+            <p className="prose-source mt-1 text-muted">
+              Chen, Wei. &ldquo;Nuclear and the Grid.&rdquo; Brookings
+              Institution, 12 Mar. 2026.
+            </p>
+            <blockquote className="prose-source mt-3 border-l-2 border-border pl-4">
+              Setting aside the politics,{" "}
+              <mark className="bg-mark text-mark-fg">
+                France generates roughly 70 percent of its electricity from
+                nuclear reactors
+              </mark>
+              , and its grid carbon intensity sits at about one fifth the
+              European average.
+            </blockquote>
+          </div>
 
-              <div className="space-y-8">
-                {result.sources.map((source, i) => (
-                  <SourceBlock
-                    key={source.url}
-                    source={source}
-                    result={result}
-                    index={i}
-                  />
-                ))}
-              </div>
-            </>
-          )}
+          <p className="mt-4 text-sm text-muted">
+            Ranked by how likely they are to be cuttable. Your terms marked.
+            Citation ready to paste.
+          </p>
+        </div>
+      </section>
 
-          {result.skipped.length > 0 && (
-            <details className="mt-10 text-xs text-neutral-500">
-              <summary className="cursor-pointer">
-                {result.skipped.length} source
-                {result.skipped.length === 1 ? "" : "s"} skipped
-              </summary>
-              <ul className="mt-2 space-y-1">
-                {result.skipped.map((s, i) => (
-                  <li key={i}>
-                    <span className="text-neutral-400">{s.reason}</span> — {s.url}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </section>
-      )}
+      {/* How it works */}
+      <section className="mx-auto max-w-5xl px-6 py-16">
+        <h2 className="text-2xl font-semibold tracking-tight">How it works</h2>
+
+        <div className="mt-8 grid gap-8 sm:grid-cols-3">
+          {STEPS.map((step) => (
+            <div key={step.n}>
+              <span className="font-mono text-xs text-accent">{step.n}</span>
+              <h3 className="mt-2 font-medium">{step.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">{step.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* The rule */}
+      <section className="border-t border-border">
+        <div className="mx-auto max-w-5xl px-6 py-16">
+          <div className="max-w-2xl">
+            <h2 className="text-2xl font-semibold tracking-tight">
+              Card bodies are never rewritten.
+            </h2>
+            <p className="mt-4 leading-relaxed text-muted">
+              A card whose body has been tightened, smoothed, or &ldquo;cleaned
+              up&rdquo; is a fabricated card — and that is the one accusation you
+              don&rsquo;t come back from in a round.
+            </p>
+            <p className="mt-4 leading-relaxed text-muted">
+              So Card Cutter never writes card text. It locates the passage in
+              the real article and gives you{" "}
+              <span className="text-fg">the article&rsquo;s own characters</span>
+              . If the words can&rsquo;t be found in the source exactly, the
+              passage is thrown out rather than repaired.
+            </p>
+
+            <Link
+              href="/about"
+              className="mt-6 inline-block text-sm font-medium text-accent hover:underline"
+            >
+              Why this matters →
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="border-t border-border bg-surface">
+        <div className="mx-auto flex max-w-5xl flex-col items-start gap-4 px-6 py-14 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">
+              Try it on your next case.
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              No sign-up, no card. Type a tag and see what comes back.
+            </p>
+          </div>
+          <Link
+            href="/cut"
+            className="rounded-md bg-fg px-5 py-2.5 text-sm font-medium text-bg transition-opacity hover:opacity-90"
+          >
+            Start cutting
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }
