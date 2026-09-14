@@ -1,4 +1,4 @@
-import { pipeline, type ZeroShotClassificationPipeline } from "@huggingface/transformers";
+import type { ZeroShotClassificationPipeline } from "@huggingface/transformers";
 
 /**
  * Does this passage support the claim, or argue against it?
@@ -18,6 +18,12 @@ import { pipeline, type ZeroShotClassificationPipeline } from "@huggingface/tran
  * 0.003, unrelated 0.166.
  *
  * Runs locally. The model is ~70MB, downloaded once and cached on disk.
+ *
+ * The runtime is loaded with a dynamic import rather than a static one. It
+ * ships native ONNX binaries, and pulling those into the build graph made the
+ * production build exceed the memory available on a normal laptop. Loading it
+ * on first use keeps it out of the bundle entirely, and means the app still
+ * builds and runs on a machine where the model is unavailable.
  */
 
 const MODEL = "Xenova/nli-deberta-v3-xsmall";
@@ -32,7 +38,10 @@ async function getModel(): Promise<ZeroShotClassificationPipeline | null> {
   // One failure means no model on this machine; don't retry on every request.
   if (failed) return null;
   if (!loading) {
-    loading = pipeline("zero-shot-classification", MODEL) as Promise<ZeroShotClassificationPipeline>;
+    loading = import("@huggingface/transformers").then(
+      ({ pipeline }) =>
+        pipeline("zero-shot-classification", MODEL) as Promise<ZeroShotClassificationPipeline>,
+    );
   }
   try {
     return await loading;
