@@ -4,6 +4,7 @@ import { tavilyClientInstance } from "../clients";
 import { mapWithConcurrency } from "../concurrency";
 import { parseQuery, searchVariants } from "../terms";
 import { rankPassages, type Passage } from "../passages";
+import { matchScore, type MatchBreakdown } from "../match-score";
 import { fetchMetadata } from "../metadata";
 import { toMLA, type ArticleMetadata } from "../citation";
 import { extract } from "./extract";
@@ -30,6 +31,8 @@ export interface FoundSource {
   /** Fields we couldn't determine from the page — the user fills these in. */
   missingCiteFields: string[];
   metadata: ArticleMetadata;
+  /** Absolute topical fit, with the components that produced it. */
+  match: MatchBreakdown;
 }
 
 export interface FindResponse {
@@ -56,6 +59,8 @@ function domainOf(url: string): string {
 export async function findEvidence(
   query: string,
   limit: number = defaultSourceLimit(),
+  /** URLs already shown — lets "show me different sources" skip them. */
+  exclude: string[] = [],
 ): Promise<FindResponse> {
   const parsed = parseQuery(query);
   const client = tavilyClientInstance();
@@ -89,13 +94,18 @@ export async function findEvidence(
     },
   );
 
-  const seen = new Set<string>();
+  // Seed with what the caller has already seen so a refresh returns new
+  // material rather than re-ranking the same eight articles.
+  const seen = new Set<string>(exclude);
+  const excludedDomains = new Set(exclude.map(domainOf));
   const perDomain = new Map<string, number>();
   const hits: Hit[] = [];
 
   for (const hit of perVariant.flat().sort((a, b) => b.score - a.score)) {
     if (seen.has(hit.url)) continue;
     const domain = domainOf(hit.url);
+    // On a refresh, prefer outlets the user has not seen at all.
+    if (excludedDomains.has(domain)) continue;
     const used = perDomain.get(domain) ?? 0;
     if (used >= MAX_PER_DOMAIN) continue;
 
@@ -146,20 +156,28 @@ export async function findEvidence(
       metadata.missing = metadata.missing.filter((f) => f !== "date");
     }
 
+    const passages = rankPassages(source.body, parsed.terms, PASSAGES_PER_SOURCE);
+    const title = metadata.title ?? source.title;
+
     return {
       url: source.url,
-      title: metadata.title ?? source.title,
+      title,
       publishedAt: metadata.published ?? source.publishedAt,
-      passages: rankPassages(source.body, parsed.terms, PASSAGES_PER_SOURCE),
+      passages,
       body: source.body,
       mla: toMLA(metadata),
       missingCiteFields: metadata.missing,
       metadata,
+      match: matchScore(parsed.terms, {
+        title,
+        passage: passages[0]?.text ?? "",
+        article: source.body,
+      }),
     };
   });
 
   // Sources whose best paragraph scored highest go first.
-  found.sort((a, b) => b.passages[0].score - a.passages[0].score);
+  found.sort((a, b) => b.match.score - a.match.score);
 
   return {
     query,

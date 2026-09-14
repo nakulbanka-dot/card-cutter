@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { highlight } from "@/lib/passages";
 import { classifySource, archiveUrl } from "@/lib/source-tier";
+import { asPercent } from "@/lib/match-score";
 import { formatCite, citeGaps } from "@/lib/cite-format";
 import { useSettings } from "@/lib/settings";
 import type { FindResponse, FoundSource } from "@/lib/pipeline/free";
@@ -18,26 +19,6 @@ import type { Action, PassageFeatures } from "@/lib/feedback";
  * claims a confidence the software does not actually have.
  */
 
-function Chip({
-  label, value, tone = "neutral",
-}: {
-  label: string; value: string; tone?: "neutral" | "good" | "warn";
-}) {
-  const tones = {
-    neutral: "border-border bg-bg",
-    good: "border-good/30 bg-good/10",
-    warn: "border-warn/30 bg-warn-soft",
-  };
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${tones[tone]}`}>
-      <div className="text-sm font-semibold tabular-nums">{value}</div>
-      <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-faint">
-        {label}
-      </div>
-    </div>
-  );
-}
-
 function TierDot({ tier }: { tier: number }) {
   const color =
     tier === 1 ? "bg-good" : tier === 2 ? "bg-accent" : tier === 3 ? "bg-warn" : "bg-faint";
@@ -50,18 +31,13 @@ export function Results({ result }: { result: FindResponse }) {
   const [copied, setCopied] = useState<string | null>(null);
   const { settings } = useSettings();
 
-  const topScore = useMemo(
-    () => Math.max(...result.sources.map((s) => s.passages[0]?.score ?? 0), 0.0001),
-    [result.sources],
-  );
-
   const source = result.sources[selected];
   if (!source) return null;
 
   const tier = classifySource(source.url);
   const gaps = citeGaps(source.metadata);
   const cite = formatCite(source.metadata, settings);
-  const match = Math.round(((source.passages[0]?.score ?? 0) / topScore) * 100);
+  const match = asPercent(source.match.score);
 
   async function copy(text: string, key: string) {
     await navigator.clipboard.writeText(text);
@@ -118,7 +94,7 @@ export function Results({ result }: { result: FindResponse }) {
         <ol className="space-y-1">
           {result.sources.map((s, i) => {
             const t = classifySource(s.url);
-            const pct = Math.round(((s.passages[0]?.score ?? 0) / topScore) * 100);
+            const pct = asPercent(s.match.score);
             const active = i === selected;
             return (
               <li key={s.url}>
@@ -176,15 +152,48 @@ export function Results({ result }: { result: FindResponse }) {
 
       {/* ---- selected source ---- */}
       <section className="min-w-0">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Chip label="Match" value={`${match}%`} tone={match >= 80 ? "good" : "neutral"} />
-          <Chip label={tier.category} value={`Tier ${tier.tier}`} tone={tier.tier <= 2 ? "good" : "neutral"} />
-          <Chip label="Access" value="Open" tone="good" />
-          <Chip
-            label="Byline"
-            value={source.metadata.authors.length > 0 ? "Named" : "None"}
-            tone={source.metadata.authors.length > 0 ? "good" : "warn"}
-          />
+        <div className="flex flex-wrap items-start gap-2">
+          <details className="group rounded-lg border border-border bg-surface">
+            <summary className="flex cursor-pointer items-center gap-3 px-4 py-2.5">
+              <span className="text-lg font-semibold tabular-nums">{match}%</span>
+              <span className="text-[10px] font-medium uppercase tracking-wider text-faint">
+                Match
+                <span className="ml-1 text-faint group-open:hidden">▾</span>
+              </span>
+            </summary>
+            {/* The number is only useful if you can see what produced it. */}
+            <div className="space-y-1.5 border-t border-border px-4 py-3">
+              {[
+                ["Terms in title", source.match.title],
+                ["Terms in the passage", source.match.passage],
+                ["Terms in the article", source.match.article],
+                ["How often they appear", source.match.density],
+              ].map(([label, value]) => (
+                <div key={label as string} className="flex items-center gap-2">
+                  <span className="w-40 text-[11px] text-muted">{label}</span>
+                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-accent"
+                      style={{ width: `${asPercent(value as number)}%` }}
+                    />
+                  </div>
+                  <span className="w-9 text-right text-[11px] tabular-nums text-faint">
+                    {asPercent(value as number)}%
+                  </span>
+                </div>
+              ))}
+              <p className="pt-1 text-[10px] leading-snug text-faint">
+                Measures topic, not which side the source argues.
+              </p>
+            </div>
+          </details>
+
+          <div className="flex items-center gap-3 rounded-lg border border-good/30 bg-good/10 px-4 py-2.5">
+            <span className="text-lg font-semibold">Open</span>
+            <span className="text-[10px] font-medium uppercase tracking-wider text-faint">
+              Access
+            </span>
+          </div>
         </div>
 
         <h2 className="mt-5 text-lg font-semibold leading-snug">
@@ -192,6 +201,18 @@ export function Results({ result }: { result: FindResponse }) {
             {source.title}
           </a>
         </h2>
+        <p className="mt-1 flex items-center gap-2 text-xs text-faint">
+          <TierDot tier={tier.tier} />
+          {tier.category}
+          <span>·</span>
+          {new URL(source.url).hostname.replace(/^www\./, "")}
+          {source.publishedAt && (
+            <>
+              <span>·</span>
+              {source.publishedAt.slice(0, 10)}
+            </>
+          )}
+        </p>
 
         <div className="mt-3 rounded-lg border border-border bg-surface p-4">
           <div className="flex items-start justify-between gap-3">

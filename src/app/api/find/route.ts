@@ -7,7 +7,7 @@ import { TavilyKeylessLimitError } from "@tavily/core";
  * No model calls, so this needs only TAVILY_API_KEY.
  */
 export async function POST(request: Request) {
-  let body: { query?: string; limit?: number };
+  let body: { query?: string; limit?: number; exclude?: string[] };
   try {
     body = await request.json();
   } catch {
@@ -22,7 +22,8 @@ export async function POST(request: Request) {
   const limit = Math.min(Math.max(body.limit ?? defaultSourceLimit(), 1), 20);
 
   try {
-    return Response.json(await findEvidence(query, limit));
+    const exclude = Array.isArray(body.exclude) ? body.exclude.slice(0, 200) : [];
+    return Response.json(await findEvidence(query, limit, exclude));
   } catch (error) {
     if (error instanceof TavilyKeylessLimitError) {
       const wait = error.retryAfter

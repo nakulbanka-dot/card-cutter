@@ -16,6 +16,7 @@ const RESULT: FindResponse = {
       body: "full article text",
       mla: 'Chen, Wei. "Nuclear and the Grid." Brookings Institution, 1 Mar. 2026, example.org/nuclear. Accessed 13 Sept. 2026.',
       missingCiteFields: [],
+      match: { title: 1, passage: 1, article: 1, density: 1, score: 1 },
       metadata: {
         authors: ["Wei Chen"],
         title: "Nuclear and the Grid",
