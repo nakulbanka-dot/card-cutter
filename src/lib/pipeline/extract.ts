@@ -4,6 +4,7 @@ import { fetchPage } from "../fetch-page";
 import type { ArticleMetadata } from "../citation";
 import type { Source } from "../types";
 import type { Hit } from "./search";
+import { isWall } from "./bot-wall.ts";
 
 /**
  * Stage 3 — get the full text.
@@ -32,19 +33,6 @@ export interface ExtractOutcome {
 
 /** Below this, extraction almost certainly hit a paywall or a consent wall. */
 const MIN_USABLE_CHARS = 600;
-
-/**
- * Bot walls return a full page of text, so the length check waves them
- * through and they rank on keyword overlap like any other source. One turned
- * up in results titled "Checking your browser - reCAPTCHA".
- */
-const BOT_WALL =
-  /(checking your browser|recaptcha|cloudflare|are you a robot|enable javascript to continue|access denied|verify you are human|ddos protection|attention required)/i;
-
-function isWall(title: string, body: string): boolean {
-  // Title and opening only; an article may legitimately discuss these words.
-  return BOT_WALL.test(title) || BOT_WALL.test(body.slice(0, 400));
-}
 
 export async function extract(hits: Hit[]): Promise<ExtractOutcome> {
   if (hits.length === 0) return { sources: [], failed: [], paidExtractions: 0 };

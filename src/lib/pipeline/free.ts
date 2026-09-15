@@ -9,6 +9,7 @@ import { scoreStanceBatch, isRemote } from "../ranking/stance";
 import { fetchMetadata } from "../metadata";
 import { toMLA, type ArticleMetadata } from "../citation";
 import { extract } from "./extract";
+import { looksLikeBotWall } from "./bot-wall.ts";
 import type { Hit } from "./search";
 
 /**
@@ -211,6 +212,15 @@ export async function findEvidence(
     // metadata came free with it. Only the ones that needed the paid
     // extractor still have to be fetched for their citation.
     const metadata = source.metadata ?? (await fetchMetadata(source.url));
+
+    // A bot wall answered the metadata request. The article itself was read
+    // fine — the paid extractor got through where this second request did
+    // not — so only the title is wrong, and leaving it would put "Checking
+    // your browser - reCAPTCHA" in the citation.
+    if (metadata.title && looksLikeBotWall(metadata.title)) {
+      metadata.title = undefined;
+      if (!metadata.missing.includes("title")) metadata.missing.push("title");
+    }
 
     // Tavily's title and date are decent fallbacks when the page omits them.
     if (!metadata.title && source.title) {

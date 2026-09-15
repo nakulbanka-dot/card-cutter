@@ -282,9 +282,18 @@ export function Results({ result }: { result: FindResponse }) {
                       >
                         Cut this
                       </button>
+                      {/*
+                        Given equal weight to "Cut this" on purpose.
+                        Every copy already logs a positive, so praise collects
+                        itself. Rejections do not: they only arrive if someone
+                        stops to say so, and they are the half that teaches the
+                        ranking what "close but wrong" looks like. Styled as
+                        faint grey text beside a filled button, nobody clicks
+                        it, and the scarce signal is the one that goes missing.
+                      */}
                       <button
                         onClick={() => record(i, "reject")}
-                        className="text-xs text-faint transition-colors hover:text-fg"
+                        className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:border-fg hover:text-fg"
                       >
                         Not useful
                       </button>
