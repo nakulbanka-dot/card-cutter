@@ -58,13 +58,35 @@ than not collecting one. `GET /api/feedback` returns zeroes there.
 To collect from real users you need somewhere with a real database. That is a
 separate piece of work, not a setting.
 
-## The limit you will hit first
+## Search limits, and why they are not optional
 
-**1,000 Tavily credits a month, shared by everyone.** One search costs about
-5 credits, so the whole site supports roughly **200 searches a month** on the
-free tier. That is enough to show people; it is not enough for a squad to
-use during a tournament. Tavily's Pay As You Go is $0.008/credit — about four
-cents per search — when you outgrow it.
+**1,000 Tavily credits a month, shared by everyone who visits.** One search
+spends about four, so the whole site supports roughly **250 searches a
+month** — eight a day. Without a limit, one person with a script exhausts the
+month before lunch and everyone else gets errors for three weeks.
+
+Two ceilings ship on by default:
+
+| Setting | Default | Stops |
+| --- | --- | --- |
+| `SEARCH_LIMIT_PER_VISITOR` | 5 / day | One visitor monopolising the day |
+| `SEARCH_LIMIT_GLOBAL` | 8 / day | A crowd doing it collectively |
+
+Both are env vars, so raise them in Vercel when you move off the free tier.
+The remaining count shows above the results, and a refused search spends no
+credits — being turned away does not also cost the visitor an allowance.
+
+The counters live in memory. On serverless each instance counts separately
+and a cold start forgets, so the real limit is looser than the number you
+set. That is a deliberate trade: no database, no signup, no key, and it stops
+the abuse that actually happens. Move to a shared store when traffic
+justifies the dependency.
+
+### What it costs to lift the cap
+
+Tavily Pay As You Go is $0.008 a credit, so about **four cents a search**.
+A squad of twelve doing ten searches a day each is roughly $150 a month. That
+number is why the pricing model has a bring-your-own-source tier.
 
 ## If you want the local model in production
 

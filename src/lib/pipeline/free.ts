@@ -38,6 +38,8 @@ export interface FoundSource {
 
 export interface FindResponse {
   query: string;
+  /** Searches this visitor has left today. Added by the route. */
+  searchesLeftToday?: number;
   /** False when running on Tavily's keyless tier, which has tighter caps. */
   usingKey: boolean;
   terms: string[];

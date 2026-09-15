@@ -45,8 +45,9 @@ export function parseQuery(input: string): ParsedQuery {
  * the net in ways that reliably surface sourceable material.
  */
 export function searchVariants(parsed: ParsedQuery): string[] {
+  // Each variant is a separate search and a separate credit. Two is the
+  // point where a third stopped adding sources that survived ranking, and on
+  // a 1,000-credit month that difference is fifty searches.
   const base = parsed.searchQuery;
-  return Array.from(
-    new Set([base, `${base} study evidence`, `${base} report data`]),
-  );
+  return Array.from(new Set([base, `${base} study evidence`]));
 }

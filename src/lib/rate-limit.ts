@@ -1,0 +1,133 @@
+/**
+ * Search limits.
+ *
+ * Search is the only thing here with a hard external budget: the free Tavily
+ * tier is 1,000 credits a month and one search spends about four, so the whole
+ * site gets roughly 250 searches a month — eight a day. Without a limit, one
+ * person with a script exhausts the month before lunch and everyone else gets
+ * errors for three weeks.
+ *
+ * Two ceilings, because they fail differently. The per-visitor limit stops one
+ * user monopolising the day. The global limit stops a crowd of well-behaved
+ * users doing the same thing collectively.
+ *
+ * State is in memory. On a serverless host each instance counts separately and
+ * a cold start forgets, so the real limit is looser than the configured one.
+ * That is a deliberate trade at this traffic: it needs no database, no signup
+ * and no key, and it stops the abuse that actually happens. Move to a shared
+ * store when the traffic justifies the dependency — the interface here does
+ * not change.
+ */
+
+export interface LimitConfig {
+  perVisitorPerDay: number;
+  globalPerDay: number;
+}
+
+export const DEFAULT_LIMITS: LimitConfig = {
+  perVisitorPerDay: 5,
+  globalPerDay: 8,
+};
+
+export function configuredLimits(): LimitConfig {
+  const num = (v: string | undefined, fallback: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  };
+  return {
+    perVisitorPerDay: num(process.env.SEARCH_LIMIT_PER_VISITOR, DEFAULT_LIMITS.perVisitorPerDay),
+    globalPerDay: num(process.env.SEARCH_LIMIT_GLOBAL, DEFAULT_LIMITS.globalPerDay),
+  };
+}
+
+interface Bucket {
+  day: string;
+  count: number;
+}
+
+const visitors = new Map<string, Bucket>();
+let global: Bucket = { day: "", count: 0 };
+
+/** UTC day key, so the reset is predictable rather than per-visitor. */
+function today(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
+export interface LimitResult {
+  allowed: boolean;
+  /** Searches this visitor has left today. */
+  remaining: number;
+  /** Which ceiling was hit, when one was. */
+  reason?: "visitor" | "global";
+  /** Seconds until the counters reset. */
+  resetInSeconds: number;
+}
+
+function secondsUntilMidnight(now: Date): number {
+  const next = Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0,
+  );
+  return Math.max(1, Math.round((next - now.getTime()) / 1000));
+}
+
+/**
+ * Record one search and say whether it is allowed.
+ *
+ * Counts only on success — a refused search spends no credits, so refusing it
+ * must not also spend the visitor's allowance.
+ */
+export function checkAndCount(
+  visitorId: string,
+  now: Date = new Date(),
+  limits: LimitConfig = configuredLimits(),
+): LimitResult {
+  const day = today(now);
+  const resetInSeconds = secondsUntilMidnight(now);
+
+  if (global.day !== day) global = { day, count: 0 };
+
+  let bucket = visitors.get(visitorId);
+  if (!bucket || bucket.day !== day) {
+    bucket = { day, count: 0 };
+    visitors.set(visitorId, bucket);
+  }
+
+  if (bucket.count >= limits.perVisitorPerDay) {
+    return { allowed: false, remaining: 0, reason: "visitor", resetInSeconds };
+  }
+  if (global.count >= limits.globalPerDay) {
+    return {
+      allowed: false,
+      remaining: Math.max(0, limits.perVisitorPerDay - bucket.count),
+      reason: "global",
+      resetInSeconds,
+    };
+  }
+
+  bucket.count++;
+  global.count++;
+
+  // Yesterday's visitors are dead weight; clear them when the map grows.
+  if (visitors.size > 5000) {
+    for (const [k, v] of visitors) if (v.day !== day) visitors.delete(k);
+  }
+
+  return {
+    allowed: true,
+    remaining: Math.max(0, limits.perVisitorPerDay - bucket.count),
+    resetInSeconds,
+  };
+}
+
+/** Identify a visitor from proxy headers. Falls back to one shared bucket. */
+export function visitorFrom(headers: Headers): string {
+  const forwarded = headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return headers.get("x-real-ip") ?? headers.get("cf-connecting-ip") ?? "unknown";
+}
+
+/** Test seam. */
+export function resetLimits(): void {
+  visitors.clear();
+  global = { day: "", count: 0 };
+}

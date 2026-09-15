@@ -190,6 +190,13 @@ export default function CutPage() {
                 <p className="text-sm text-muted">
                   <span className="font-medium text-fg">{passages}</span> passages from{" "}
                   <span className="font-medium text-fg">{result.sources.length}</span> sources
+                  {result.searchesLeftToday !== undefined && (
+                    <span className="text-faint">
+                      {" · "}
+                      {result.searchesLeftToday} search
+                      {result.searchesLeftToday === 1 ? "" : "es"} left today
+                    </span>
+                  )}
                 </p>
 
                 <div className="flex items-center gap-2">

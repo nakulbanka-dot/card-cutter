@@ -1,6 +1,7 @@
 import { findEvidence } from "@/lib/pipeline/free";
 import { defaultSourceLimit } from "@/lib/env";
 import { TavilyKeylessLimitError } from "@tavily/core";
+import { checkAndCount, visitorFrom } from "@/lib/rate-limit";
 
 /**
  * POST /api/find — free mode. Search, extract, rank passages.
@@ -21,9 +22,25 @@ export async function POST(request: Request) {
 
   const limit = Math.min(Math.max(body.limit ?? defaultSourceLimit(), 1), 20);
 
+  // Checked before any search runs, so a refused request spends no credits.
+  const gate = checkAndCount(visitorFrom(request.headers));
+  if (!gate.allowed) {
+    const hours = Math.ceil(gate.resetInSeconds / 3600);
+    return Response.json(
+      {
+        error:
+          gate.reason === "global"
+            ? `Card Cutter has hit its search budget for today. It resets in about ${hours} hour${hours === 1 ? "" : "s"}.`
+            : `You've used your searches for today. They reset in about ${hours} hour${hours === 1 ? "" : "s"}.`,
+      },
+      { status: 429, headers: { "Retry-After": String(gate.resetInSeconds) } },
+    );
+  }
+
   try {
     const exclude = Array.isArray(body.exclude) ? body.exclude.slice(0, 200) : [];
-    return Response.json(await findEvidence(query, limit, exclude));
+    const result = await findEvidence(query, limit, exclude);
+    return Response.json({ ...result, searchesLeftToday: gate.remaining });
   } catch (error) {
     if (error instanceof TavilyKeylessLimitError) {
       // User-facing: they cannot do anything about our search backend, only
