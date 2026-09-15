@@ -63,3 +63,39 @@ test("collection can be switched off explicitly", () => {
     assert.equal(activeBackend(), "none");
   });
 });
+
+test("finds the credentials under any prefix Vercel was told to use", () => {
+  // The integration lets you type a prefix, so these can arrive named almost
+  // anything. A correctly provisioned database must not silently do nothing.
+  const cases: Record<string, string>[] = [
+    { STORAGE_REST_URL: "https://x.upstash.io", STORAGE_REST_TOKEN: "t" },
+    { MY_CACHE_REST_URL: "https://x.upstash.io", MY_CACHE_REST_TOKEN: "t" },
+    { FEEDBACK_REST_URL: "https://x.upstash.io", FEEDBACK_REST_API_TOKEN: "t" },
+  ];
+  for (const vars of cases) {
+    const keys = Object.keys(vars);
+    const saved: Record<string, string | undefined> = {};
+    for (const k of keys) saved[k] = process.env[k];
+    try {
+      for (const [k, v] of Object.entries(vars)) process.env[k] = v;
+      assert.equal(activeBackend(), "redis", `missed: ${keys.join(", ")}`);
+    } finally {
+      for (const k of keys) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
+  }
+});
+
+test("a REST_URL that is not a url is ignored", () => {
+  const saved = process.env.WEIRD_REST_URL;
+  try {
+    process.env.WEIRD_REST_URL = "not-a-url";
+    process.env.WEIRD_REST_TOKEN = "t";
+    assert.notEqual(activeBackend(), "redis");
+  } finally {
+    if (saved === undefined) delete process.env.WEIRD_REST_URL;
+    delete process.env.WEIRD_REST_TOKEN;
+  }
+});

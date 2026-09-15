@@ -27,12 +27,43 @@ interface RedisConfig {
   token: string;
 }
 
-/** Vercel KV and Upstash set different names for the same thing. */
+/**
+ * Find the Redis REST credentials, whatever they were named.
+ *
+ * Vercel's integration lets you choose a prefix when connecting a database,
+ * so the variables can arrive as KV_REST_API_URL, UPSTASH_REDIS_REST_URL,
+ * STORAGE_REST_URL, or anything else someone typed into that box. Hardcoding
+ * one spelling means a correctly provisioned database silently does nothing.
+ *
+ * Known names are tried first, then any pair of variables that look like a
+ * REST url and token from the same prefix.
+ */
 function redisConfig(): RedisConfig | null {
-  const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
-  const token =
-    process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
-  return url && token ? { url: url.replace(/\/$/, ""), token } : null;
+  const known: [string, string][] = [
+    ["KV_REST_API_URL", "KV_REST_API_TOKEN"],
+    ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
+    ["REDIS_REST_URL", "REDIS_REST_TOKEN"],
+    ["STORAGE_REST_URL", "STORAGE_REST_TOKEN"],
+    ["STORAGE_KV_REST_API_URL", "STORAGE_KV_REST_API_TOKEN"],
+  ];
+  for (const [u, t] of known) {
+    const url = process.env[u];
+    const token = process.env[t];
+    if (url && token) return { url: url.replace(/\/$/, ""), token };
+  }
+
+  // Fall back to matching on shape: <PREFIX>REST_URL with a sibling token.
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!value || !/REST_URL$/.test(key)) continue;
+    if (!/^https?:\/\//.test(value)) continue;
+
+    const prefix = key.slice(0, -"REST_URL".length);
+    const token =
+      process.env[`${prefix}REST_TOKEN`] ?? process.env[`${prefix}REST_API_TOKEN`];
+    if (token) return { url: value.replace(/\/$/, ""), token };
+  }
+
+  return null;
 }
 
 async function redisCommand(
