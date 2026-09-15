@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkAndCount, resetLimits, visitorFrom } from "./rate-limit.ts";
+import {
+  checkAndCount, resetLimits, visitorFrom, configuredLimits,
+  DEFAULT_LIMITS, DEV_LIMITS,
+} from "./rate-limit.ts";
 
 const LIMITS = { perVisitorPerDay: 3, globalPerDay: 5 };
 const T = new Date("2026-09-14T12:00:00Z");
@@ -73,4 +76,12 @@ test("visitor id comes from the first forwarded address", () => {
   );
   assert.equal(visitorFrom(new Headers({ "x-real-ip": "198.51.100.2" })), "198.51.100.2");
   assert.equal(visitorFrom(new Headers()), "unknown");
+});
+
+test("development gets generous defaults, production tight ones", () => {
+  // The public defaults are sized for a shared search budget. Applying them
+  // to a dev machine just stops you working after five queries.
+  assert.equal(configuredLimits(true).perVisitorPerDay, DEFAULT_LIMITS.perVisitorPerDay);
+  assert.equal(configuredLimits(false).perVisitorPerDay, DEV_LIMITS.perVisitorPerDay);
+  assert.ok(DEV_LIMITS.perVisitorPerDay > DEFAULT_LIMITS.perVisitorPerDay);
 });

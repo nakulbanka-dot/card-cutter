@@ -24,19 +24,39 @@ export interface LimitConfig {
   globalPerDay: number;
 }
 
+/**
+ * Tight in production, where the Tavily budget is shared by every visitor.
+ */
 export const DEFAULT_LIMITS: LimitConfig = {
   perVisitorPerDay: 5,
   globalPerDay: 8,
 };
 
-export function configuredLimits(): LimitConfig {
+/**
+ * Generous in development. The public defaults are sized for a shared search
+ * budget; applied to the machine you are building on they just stop you
+ * working after five queries, which is what happened.
+ */
+export const DEV_LIMITS: LimitConfig = {
+  perVisitorPerDay: 200,
+  globalPerDay: 200,
+};
+
+/**
+ * `isProduction` is a parameter rather than a read of NODE_ENV inside, so a
+ * test can exercise both branches without mutating the environment.
+ */
+export function configuredLimits(
+  isProduction: boolean = process.env.NODE_ENV === "production",
+): LimitConfig {
   const num = (v: string | undefined, fallback: number) => {
     const n = Number(v);
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
   };
+  const base = isProduction ? DEFAULT_LIMITS : DEV_LIMITS;
   return {
-    perVisitorPerDay: num(process.env.SEARCH_LIMIT_PER_VISITOR, DEFAULT_LIMITS.perVisitorPerDay),
-    globalPerDay: num(process.env.SEARCH_LIMIT_GLOBAL, DEFAULT_LIMITS.globalPerDay),
+    perVisitorPerDay: num(process.env.SEARCH_LIMIT_PER_VISITOR, base.perVisitorPerDay),
+    globalPerDay: num(process.env.SEARCH_LIMIT_GLOBAL, base.globalPerDay),
   };
 }
 

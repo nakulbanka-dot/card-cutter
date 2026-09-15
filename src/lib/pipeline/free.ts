@@ -34,6 +34,8 @@ export interface FoundSource {
   metadata: ArticleMetadata;
   /** Absolute topical fit, with the components that produced it. */
   match: MatchBreakdown;
+  /** Whether the model read this source, or it fell outside the read budget. */
+  wasRead?: boolean;
 }
 
 export interface FindResponse {
@@ -62,12 +64,30 @@ const PASSAGES_PER_SOURCE = 4;
  */
 const CANDIDATES_PER_SOURCE = 5;
 /**
- * Fewer when scoring is hosted. A remote call is ~4.4s against ~200ms local,
- * so five candidates a source is a comfortable read locally and a timeout in
- * deployment. Two still lets the model choose rather than rubber-stamp the
- * keyword favourite, which was the point.
+ * Fewer when scoring is hosted. A remote call is ~4.4s against ~200ms local.
+ * Two still lets the model choose rather than rubber-stamp the keyword
+ * favourite, which was the point.
  */
 const REMOTE_CANDIDATES_PER_SOURCE = 2;
+
+/**
+ * Total hosted reads one query may spend.
+ *
+ * Hugging Face's free tier queues requests, so ten in parallel take about as
+ * long as ten in sequence — roughly 18s either way. Concurrency cannot fix
+ * that; only doing less can.
+ *
+ * So the budget is spent where it changes the answer. Sources are already
+ * ordered by keyword match, and the model's job is to sort out the top of
+ * that list — whether the leader actually argues your side. A source sitting
+ * eighth on keywords is not going to win, and reading it costs the same four
+ * seconds as reading the leader.
+ *
+ * Anything past the budget keeps its keyword-only score and ranks below
+ * everything that was read, which is honest: unread is not the same as
+ * judged poor.
+ */
+const REMOTE_READ_BUDGET = 6;
 
 function domainOf(url: string): string {
   try {
@@ -203,12 +223,22 @@ export async function findEvidence(
   // The model reads every shortlisted paragraph, not just the first one.
   // Keyword scoring got them onto the shortlist; this decides which of them
   // is actually worth cutting, and in what order.
+  // Best keyword matches first, so the budget goes to the contenders.
+  found.sort((a, b) => b.match.score - a.match.score);
+
   const jobs: { source: number; passage: number; title: string; text: string }[] = [];
-  found.forEach((f, si) => {
-    f.passages.forEach((p, pi) => {
-      jobs.push({ source: si, passage: pi, title: f.title, text: p.text });
-    });
-  });
+  const budget = isRemote() ? REMOTE_READ_BUDGET : Infinity;
+  outer: for (let si = 0; si < found.length; si++) {
+    for (let pi = 0; pi < found[si].passages.length; pi++) {
+      if (jobs.length >= budget) break outer;
+      jobs.push({
+        source: si,
+        passage: pi,
+        title: found[si].title,
+        text: found[si].passages[pi].text,
+      });
+    }
+  }
 
   const read = await scoreStanceBatch(
     parsed.searchQuery,
@@ -227,6 +257,7 @@ export async function findEvidence(
 
   found.forEach((f, si) => {
     const supports = supportBySource.get(si);
+    f.wasRead = supports !== undefined && supports.length > 0;
 
     // Order paragraphs by what the model found, keeping keyword score only as
     // a tiebreaker for anything it could not read.
@@ -243,6 +274,11 @@ export async function findEvidence(
     );
   });
 
+  // Sort on the score alone. Promoting read sources above unread ones was
+  // wrong: a source the model read and scored at 21% support is known not to
+  // argue your side, and an unread source is merely unjudged. Known-bad must
+  // not outrank unknown. The score already carries the difference, since a
+  // read source folds its support in at the heaviest weight.
   found.sort((a, b) => b.match.score - a.match.score);
 
   return {
