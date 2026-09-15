@@ -5,10 +5,12 @@ import type { FeedbackRow } from "./feedback";
 /**
  * Where feedback rows go.
  *
- * Two backends, chosen by what the environment provides:
+ * Three backends, chosen by what the environment provides:
  *
- *   redis  a Redis HTTP API (Vercel KV, Upstash). Used in deployment, where
- *          the filesystem is wiped between requests.
+ *   tcp    a redis:// connection string, which is what Vercel's Redis
+ *          integration provisions. Used in deployment.
+ *   rest   a Redis HTTP API (Upstash's REST interface), if that is what was
+ *          set up instead.
  *   file   data/feedback.jsonl. Used locally, where a real disk exists.
  *
  * Neither available means collection is off, and the API says so rather than
@@ -88,11 +90,21 @@ async function redisCommand(
 const DATA_DIR = path.join(process.cwd(), "data");
 const LOG = path.join(DATA_DIR, "feedback.jsonl");
 
-export type Backend = "redis" | "file" | "none";
+export type Backend = "redis" | "redis-rest" | "file" | "none";
+
+/** Vercel's Redis integration sets a connection string, not REST credentials. */
+function connectionUrl(): string | undefined {
+  const url =
+    process.env.REDIS_URL ??
+    process.env.STORAGE_REDIS_URL ??
+    process.env.KV_URL;
+  return url && /^rediss?:\/\//.test(url) ? url : undefined;
+}
 
 export function activeBackend(): Backend {
   if (process.env.CARD_CUTTER_COLLECT === "0") return "none";
-  if (redisConfig()) return "redis";
+  if (connectionUrl()) return "redis";
+  if (redisConfig()) return "redis-rest";
 
   // Serverless filesystems are wiped between invocations, so a file write
   // there would look like success and lose everything.
@@ -103,10 +115,52 @@ export function activeBackend(): Backend {
 }
 
 /** Append one row. Returns false when nothing was stored. */
+/**
+ * One client per process, reused across invocations.
+ *
+ * A serverless instance handles many requests, and reconnecting per request
+ * would exhaust the connection limit quickly — the free plan allows 30.
+ */
+let client: Promise<{
+  rPush: (k: string, v: string) => Promise<number>;
+  lRange: (k: string, a: number, b: number) => Promise<string[]>;
+}> | null = null;
+
+async function tcpClient() {
+  if (!client) {
+    const url = connectionUrl()!;
+    client = import("redis").then(async ({ createClient }) => {
+      const c = createClient({ url });
+      // Without a handler an emitted error is an unhandled rejection, which
+      // takes the whole function down rather than losing one row.
+      c.on("error", () => {});
+      await c.connect();
+      return c as unknown as Awaited<NonNullable<typeof client>>;
+    });
+  }
+  try {
+    return await client;
+  } catch {
+    client = null; // let the next request try again
+    return null;
+  }
+}
+
 export async function appendFeedback(row: FeedbackRow): Promise<boolean> {
   const backend = activeBackend();
 
   if (backend === "redis") {
+    try {
+      const c = await tcpClient();
+      if (!c) return false;
+      await c.rPush(LIST_KEY, JSON.stringify(row));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (backend === "redis-rest") {
     const cfg = redisConfig()!;
     try {
       await redisCommand(cfg, ["RPUSH", LIST_KEY, JSON.stringify(row)]);
@@ -135,6 +189,23 @@ export async function readAllFeedback(): Promise<FeedbackRow[]> {
   const backend = activeBackend();
 
   if (backend === "redis") {
+    try {
+      const c = await tcpClient();
+      if (!c) return [];
+      const raw = await c.lRange(LIST_KEY, 0, -1);
+      return raw.flatMap((line) => {
+        try {
+          return [JSON.parse(line) as FeedbackRow];
+        } catch {
+          return [];
+        }
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  if (backend === "redis-rest") {
     const cfg = redisConfig()!;
     try {
       const raw = (await redisCommand(cfg, ["LRANGE", LIST_KEY, 0, -1])) as string[];

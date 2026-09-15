@@ -77,13 +77,17 @@ thrown away.
 Serverless filesystems are wiped between requests, so deployment needs a
 store. Roughly two minutes:
 
-1. In your Vercel project, open **Storage** → **Create Database** → **Upstash
-   for Redis** → the free plan.
-2. Connect it to the project. Vercel sets `KV_REST_API_URL` and
-   `KV_REST_API_TOKEN` for you.
+1. In your Vercel project, open **Storage** → **Create Database** → **Redis**
+   → the free plan.
+2. Connect it to the project. Vercel sets `REDIS_URL` for you. (If you set up
+   Upstash's REST interface instead, `KV_REST_API_URL` and
+   `KV_REST_API_TOKEN` work too — both are supported.)
 3. Add `FEEDBACK_EXPORT_TOKEN` yourself — any long random string. This is what
    lets you download the data later.
 4. Redeploy.
+
+The free plan is RAM-only with no persistence, so treat it as a collection
+buffer rather than an archive and export regularly.
 
 `GET /api/feedback` reports which store is live, so you can check rather than
 assume:
@@ -91,6 +95,9 @@ assume:
 ```json
 { "total": 12, "cut": 7, "precision": 0.58, "storage": "redis" }
 ```
+
+`"redis"` is a connection string, `"redis-rest"` is the HTTP interface, and
+`"file"` is local disk — all three store rows.
 
 `"storage": "none"` means clicks are being discarded. The app says so rather
 than pretending, because a training set you believe you are collecting and are
