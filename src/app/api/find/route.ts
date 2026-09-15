@@ -4,9 +4,14 @@ import { TavilyKeylessLimitError } from "@tavily/core";
 import { checkAndCount, visitorFrom } from "@/lib/rate-limit";
 
 /**
- * POST /api/find — free mode. Search, extract, rank passages.
- * No model calls, so this needs only TAVILY_API_KEY.
+ * POST /api/find — search, extract, read and rank.
+ *
+ * Hosted stance scoring is ~4.4s a call against ~200ms locally, and the first
+ * request after an idle period pays a ~23s model cold start on top. Measured
+ * end to end at 28s. Vercel's default serverless ceiling would cut that off
+ * mid-request, so the limit is raised explicitly.
  */
+export const maxDuration = 60;
 export async function POST(request: Request) {
   let body: { query?: string; limit?: number; exclude?: string[] };
   try {

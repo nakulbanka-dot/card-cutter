@@ -5,7 +5,7 @@ import { mapWithConcurrency } from "../concurrency";
 import { parseQuery, searchVariants } from "../terms";
 import { rankPassages, type Passage } from "../passages";
 import { matchScore, type MatchBreakdown } from "../match-score";
-import { scoreStanceBatch } from "../ranking/stance";
+import { scoreStanceBatch, isRemote } from "../ranking/stance";
 import { fetchMetadata } from "../metadata";
 import { toMLA, type ArticleMetadata } from "../citation";
 import { extract } from "./extract";
@@ -61,6 +61,13 @@ const PASSAGES_PER_SOURCE = 4;
  * last few candidates was small — they were rarely chosen.
  */
 const CANDIDATES_PER_SOURCE = 5;
+/**
+ * Fewer when scoring is hosted. A remote call is ~4.4s against ~200ms local,
+ * so five candidates a source is a comfortable read locally and a timeout in
+ * deployment. Two still lets the model choose rather than rubber-stamp the
+ * keyword favourite, which was the point.
+ */
+const REMOTE_CANDIDATES_PER_SOURCE = 2;
 
 function domainOf(url: string): string {
   try {
@@ -169,7 +176,11 @@ export async function findEvidence(
       metadata.missing = metadata.missing.filter((f) => f !== "date");
     }
 
-    const candidates = rankPassages(source.body, parsed.terms, CANDIDATES_PER_SOURCE);
+    const candidates = rankPassages(
+      source.body,
+      parsed.terms,
+      isRemote() ? REMOTE_CANDIDATES_PER_SOURCE : CANDIDATES_PER_SOURCE,
+    );
     const title = metadata.title ?? source.title;
 
     return {

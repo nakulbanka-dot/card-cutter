@@ -42,6 +42,25 @@ break.
 
 Every push to `main` redeploys from then on.
 
+### What deployment costs in speed
+
+Hosted stance scoring is much slower than local, and it is worth knowing
+before you see it:
+
+| | Local | Hosted |
+| --- | --- | --- |
+| One passage read | ~200ms | ~4.4s |
+| First read after idle | — | ~23s cold start |
+| Whole query | ~11s | ~28s |
+
+The shortlist shrinks from five candidates a source to two when running
+hosted, which keeps it inside the function timeout while still letting the
+model choose rather than rubber-stamp the keyword favourite. `maxDuration` on
+the route is raised to 60s so Vercel does not cut a slow query off.
+
+If that is too slow, a container host runs the local model at full speed —
+see the last section.
+
 ### 3. Check it
 
 Open the deployment and run one search. If results come back with a **Match**

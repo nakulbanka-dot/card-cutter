@@ -35,7 +35,24 @@ import type { ZeroShotClassificationPipeline } from "@huggingface/transformers";
  * memory available on a normal laptop.
  */
 
-const MODEL = "Xenova/nli-deberta-v3-xsmall";
+/**
+ * Two model ids, because the two paths serve different artifacts.
+ *
+ * Xenova/* repos are ONNX ports published for transformers.js. They run
+ * locally and are not served by Hugging Face's hosted inference, which serves
+ * the PyTorch originals — asking for the Xenova id remotely returns nothing,
+ * which is what made stance silently null on every source.
+ */
+const LOCAL_MODEL = "Xenova/nli-deberta-v3-xsmall";
+const REMOTE_MODEL = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli";
+
+/**
+ * api-inference.huggingface.co is retired; hosted inference is behind the
+ * router now. Measured on the same passages, the hosted model separates
+ * better than the local one: supporting 0.891, opposing 0.000, unrelated
+ * 0.001.
+ */
+const REMOTE_URL = `https://router.huggingface.co/hf-inference/models/${REMOTE_MODEL}`;
 
 /** Cross-encoders are quadratic in length; the opening is where a card argues. */
 const MAX_CHARS = 1200;
@@ -65,7 +82,7 @@ async function scoreRemote(
 
   try {
     const res = await fetch(
-      `https://api-inference.huggingface.co/models/${MODEL}`,
+      REMOTE_URL,
       {
         method: "POST",
         headers: {
@@ -113,7 +130,7 @@ async function getModel(): Promise<ZeroShotClassificationPipeline | null> {
   if (!loading) {
     loading = import("@huggingface/transformers").then(
       ({ pipeline }) =>
-        pipeline("zero-shot-classification", MODEL) as Promise<ZeroShotClassificationPipeline>,
+        pipeline("zero-shot-classification", LOCAL_MODEL) as Promise<ZeroShotClassificationPipeline>,
     );
   }
   try {
@@ -123,6 +140,18 @@ async function getModel(): Promise<ZeroShotClassificationPipeline | null> {
     loading = null;
     return null;
   }
+}
+
+/**
+ * True when scoring goes over the network.
+ *
+ * Callers use this to size their shortlist. Measured: a hosted call takes
+ * ~4.4s warm and ~23s on the first request after an idle period, against
+ * ~200ms locally. Reading five candidates per source is cheap locally and
+ * a timeout remotely.
+ */
+export function isRemote(): boolean {
+  return Boolean(remoteToken());
 }
 
 /** Warm the model so the first real query doesn't pay the load. */
@@ -183,14 +212,40 @@ export async function scoreStance(
   }
 }
 
-/** Score several passages, bounded so one query can't pin the CPU. */
+/**
+ * Score several passages.
+ *
+ * The two paths want opposite scheduling. Local inference is CPU-bound and the
+ * runtime is already threaded, so running passages in parallel makes each one
+ * slower without finishing the set any sooner. Remote inference is a network
+ * round trip that spends nearly all its time waiting, so running them one at a
+ * time turns 25 passages into a timeout — which is exactly what happened.
+ */
+const REMOTE_CONCURRENCY = 8;
+
 export async function scoreStanceBatch(
   claim: string,
   passages: { title: string; text: string }[],
 ): Promise<(number | null)[]> {
+  if (passages.length === 0) return [];
+
+  if (remoteToken()) {
+    const out: (number | null)[] = new Array(passages.length).fill(null);
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(REMOTE_CONCURRENCY, passages.length) }, async () => {
+        while (true) {
+          const i = next++;
+          if (i >= passages.length) return;
+          const r = await scoreStance(claim, passages[i].text, passages[i].title);
+          out[i] = r ? r.support : null;
+        }
+      }),
+    );
+    return out;
+  }
+
   const out: (number | null)[] = [];
-  // Sequential on purpose: the runtime is already multi-threaded internally,
-  // and running these in parallel makes each slower rather than the set faster.
   for (const p of passages) {
     const r = await scoreStance(claim, p.text, p.title);
     out.push(r ? r.support : null);
