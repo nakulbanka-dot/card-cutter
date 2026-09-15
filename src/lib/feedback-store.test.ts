@@ -1,0 +1,65 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { activeBackend } from "./feedback-store.ts";
+
+/** Save and restore the env keys the backend choice depends on. */
+function withEnv(vars: Record<string, string | undefined>, fn: () => void) {
+  const keys = ["KV_REST_API_URL", "KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN", "VERCEL", "CARD_CUTTER_COLLECT"];
+  const saved: Record<string, string | undefined> = {};
+  for (const k of keys) saved[k] = process.env[k];
+  try {
+    for (const k of keys) delete process.env[k];
+    for (const [k, v] of Object.entries(vars)) if (v !== undefined) process.env[k] = v;
+    fn();
+  } finally {
+    for (const k of keys) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
+}
+
+test("uses redis when a KV url and token are present", () => {
+  withEnv({ KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "t" }, () => {
+    assert.equal(activeBackend(), "redis");
+  });
+});
+
+test("accepts the Upstash names as well as the Vercel KV ones", () => {
+  withEnv({ UPSTASH_REDIS_REST_URL: "https://x.upstash.io", UPSTASH_REDIS_REST_TOKEN: "t" }, () => {
+    assert.equal(activeBackend(), "redis");
+  });
+});
+
+test("a half-configured redis is never treated as redis", () => {
+  // Locally this falls through to a file, which is fine. What must not happen
+  // is writing to a Redis we have no token for and reporting success.
+  withEnv({ KV_REST_API_URL: "https://x.upstash.io" }, () => {
+    assert.notEqual(activeBackend(), "redis");
+  });
+  withEnv({ VERCEL: "1", KV_REST_API_URL: "https://x.upstash.io" }, () => {
+    assert.equal(activeBackend(), "none", "and on serverless there is nowhere left to go");
+  });
+});
+
+test("falls back to a file locally", () => {
+  withEnv({}, () => assert.equal(activeBackend(), "file"));
+});
+
+test("refuses to write files on serverless, where the disk is wiped", () => {
+  // Writing there would look like success and lose every row.
+  withEnv({ VERCEL: "1" }, () => assert.equal(activeBackend(), "none"));
+});
+
+test("redis is used on serverless, where a file would not survive", () => {
+  withEnv({ VERCEL: "1", KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "t" }, () => {
+    assert.equal(activeBackend(), "redis");
+  });
+});
+
+test("collection can be switched off explicitly", () => {
+  withEnv({ CARD_CUTTER_COLLECT: "0", KV_REST_API_URL: "https://x.upstash.io", KV_REST_API_TOKEN: "t" }, () => {
+    assert.equal(activeBackend(), "none");
+  });
+});

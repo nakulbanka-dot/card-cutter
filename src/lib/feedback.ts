@@ -1,5 +1,4 @@
-import { appendFile, readFile, mkdir } from "node:fs/promises";
-import path from "node:path";
+import { appendFeedback, readAllFeedback, activeBackend } from "./feedback-store";
 
 /**
  * The training set.
@@ -55,52 +54,21 @@ export interface FeedbackRow {
   features: PassageFeatures;
 }
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const LOG = path.join(DATA_DIR, "feedback.jsonl");
-
-/**
- * Collection is on locally and off in deployment unless explicitly enabled.
- * Vercel, Netlify and similar set VERCEL / NETLIFY in the environment.
- */
+/** True when rows are actually being stored somewhere durable. */
 export function collectionEnabled(): boolean {
-  if (process.env.CARD_CUTTER_COLLECT === "1") return true;
-  if (process.env.CARD_CUTTER_COLLECT === "0") return false;
-  const serverless = Boolean(
-    process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME,
-  );
-  return !serverless;
+  return activeBackend() !== "none";
 }
 
 export async function logFeedback(row: FeedbackRow): Promise<boolean> {
-  if (!collectionEnabled()) return false;
-  try {
-    await mkdir(DATA_DIR, { recursive: true });
-    await appendFile(LOG, JSON.stringify(row) + "\n", "utf8");
-    return true;
-  } catch {
-    // A read-only filesystem must not turn a click into a 500.
-    return false;
-  }
+  return appendFeedback(row);
 }
 
 /** Read the whole log. Small enough to hold in memory for a long time. */
 export async function readFeedback(): Promise<FeedbackRow[]> {
-  try {
-    const raw = await readFile(LOG, "utf8");
-    return raw
-      .split("\n")
-      .filter((l) => l.trim())
-      .flatMap((l) => {
-        try {
-          return [JSON.parse(l) as FeedbackRow];
-        } catch {
-          return []; // A torn final line shouldn't break training.
-        }
-      });
-  } catch {
-    return [];
-  }
+  return readAllFeedback();
 }
+
+export { activeBackend };
 
 export interface Stats {
   total: number;

@@ -67,15 +67,43 @@ Open the deployment and run one search. If results come back with a **Match**
 percentage that has an "Argues your side" row in its breakdown, both keys are
 working. If that row is missing, the Hugging Face key is not set.
 
-## What a visitor gets
+## Collecting feedback from real users
 
-Everything except feedback collection. Cut / Not useful still respond, but
-nothing is recorded — serverless filesystems are wiped between requests, and
-writing a training set you believe you are collecting and are not is worse
-than not collecting one. `GET /api/feedback` returns zeroes there.
+Cut / Not useful decisions are the only source of one judgment the app cannot
+learn anywhere else: whether a paragraph is worth reading aloud, as opposed to
+merely on topic. Every search run without storage configured is a judgment
+thrown away.
 
-To collect from real users you need somewhere with a real database. That is a
-separate piece of work, not a setting.
+Serverless filesystems are wiped between requests, so deployment needs a
+store. Roughly two minutes:
+
+1. In your Vercel project, open **Storage** → **Create Database** → **Upstash
+   for Redis** → the free plan.
+2. Connect it to the project. Vercel sets `KV_REST_API_URL` and
+   `KV_REST_API_TOKEN` for you.
+3. Add `FEEDBACK_EXPORT_TOKEN` yourself — any long random string. This is what
+   lets you download the data later.
+4. Redeploy.
+
+`GET /api/feedback` reports which store is live, so you can check rather than
+assume:
+
+```json
+{ "total": 12, "cut": 7, "precision": 0.58, "storage": "redis" }
+```
+
+`"storage": "none"` means clicks are being discarded. The app says so rather
+than pretending, because a training set you believe you are collecting and are
+not is worse than none.
+
+### Getting the data out
+
+```bash
+curl -H "Authorization: Bearer $FEEDBACK_EXPORT_TOKEN" \
+  "https://your-app.vercel.app/api/feedback?export=1" > data/feedback.jsonl
+```
+
+That is the same JSONL the training scripts read.
 
 ## Search limits, and why they are not optional
 
