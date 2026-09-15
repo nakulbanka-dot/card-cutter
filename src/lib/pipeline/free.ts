@@ -92,7 +92,7 @@ const REMOTE_CANDIDATES_PER_SOURCE = 2;
  * everything that was read, which is honest: unread is not the same as
  * judged poor.
  */
-const REMOTE_READ_BUDGET = 6;
+const REMOTE_READ_BUDGET = 10;
 
 function domainOf(url: string): string {
   try {
@@ -252,17 +252,24 @@ export async function findEvidence(
   // Best keyword matches first, so the budget goes to the contenders.
   found.sort((a, b) => b.match.score - a.match.score);
 
+  // Breadth before depth.
+  //
+  // Spending the budget depth-first meant the top few sources had every
+  // candidate read while the rest had none — so most passages on screen were
+  // keyword picks the model never saw, and they argued whatever the keywords
+  // happened to match. Reading one passage from every source first means
+  // nothing is shown unjudged; leftover budget then goes on second and third
+  // candidates from the strongest sources.
   const jobs: { source: number; passage: number; title: string; text: string }[] = [];
   const budget = isRemote() ? REMOTE_READ_BUDGET : Infinity;
-  outer: for (let si = 0; si < found.length; si++) {
-    for (let pi = 0; pi < found[si].passages.length; pi++) {
+
+  const deepest = Math.max(0, ...found.map((f) => f.passages.length));
+  outer: for (let depth = 0; depth < deepest; depth++) {
+    for (let si = 0; si < found.length; si++) {
       if (jobs.length >= budget) break outer;
-      jobs.push({
-        source: si,
-        passage: pi,
-        title: found[si].title,
-        text: found[si].passages[pi].text,
-      });
+      const passage = found[si].passages[depth];
+      if (!passage) continue;
+      jobs.push({ source: si, passage: depth, title: found[si].title, text: passage.text });
     }
   }
 
@@ -288,7 +295,13 @@ export async function findEvidence(
     // Order paragraphs by what the model found, keeping keyword score only as
     // a tiebreaker for anything it could not read.
     f.passages.sort((a, b) => (b.support ?? -1) - (a.support ?? -1) || b.score - a.score);
-    f.passages = f.passages.slice(0, PASSAGES_PER_SOURCE);
+
+    // If any passage from this source was read, show only read ones. Mixing a
+    // judged passage with an unjudged one below it invites the reader to treat
+    // both as vetted, when the second is whatever the keywords happened to
+    // match. Better to show two good passages than four of unknown standing.
+    const judged = f.passages.filter((p) => p.support !== undefined);
+    f.passages = (judged.length > 0 ? judged : f.passages).slice(0, PASSAGES_PER_SOURCE);
 
     if (!supports || supports.length === 0) return;
     // A source is as good as its best paragraph, which is what you would cut.
