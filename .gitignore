@@ -45,3 +45,7 @@ next-env.d.ts
 
 # local training data — yours, never committed
 /data/
+
+# python training environment (torch, ~2GB)
+/.venv-train/
+/models/
