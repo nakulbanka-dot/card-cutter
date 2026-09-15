@@ -41,14 +41,24 @@ someone stops and clicks. Those are the examples that teach the ranking what
 
 ## Before you send it
 
-- [ ] Raise the rate limits, or testers will hit a wall. Production is
-      currently 25 per person per day, 60 a day total, **220 a month total**.
-      Ten testers doing twenty searches each exhausts the month in under a
-      week. See `src/lib/rate-limit.ts`.
-- [ ] Confirm feedback storage is live: `curl .../api/feedback` should report
-      `"storage":"redis"`, not `"none"`. A tester session with storage off
-      produces nothing and cannot be replayed.
+- [x] **Rate limits reshaped** for a launch burst: 150 a day globally (was 60,
+      which ten testers exhausted in an afternoon), 15 per person (was 25, one
+      of which could spend a tenth of the month). The 220 monthly cap is
+      unchanged — it is the free tier's real budget, and raising it means
+      paying. See `src/lib/rate-limit.ts`.
+- [x] Feedback storage confirmed live in production — `/api/feedback` reports
+      `"storage":"redis"`. A tester session with storage off produces nothing
+      and cannot be replayed.
+- [ ] Deploy. The fixes above are committed but not pushed.
 - [ ] Do one search yourself on the deployed site, not localhost.
+
+## Owed after the trained model ships
+
+- [ ] **Homepage copy.** It currently says Card Cutter "learns from these to
+      judge which sources are worth your time." That is not true today — the
+      corpus trained a junk filter and nothing more. It becomes true when the
+      card-trained ranker replaces the borrowed NLI model, which is why it is
+      being corrected then rather than twice.
 
 ## After
 

@@ -36,12 +36,23 @@ export interface LimitConfig {
  *
  * The free tier is 1,000 credits a month and a search spends about four, so
  * roughly 250 searches exist per month in total. The monthly cap sits just
- * under that. Daily numbers are deliberately loose — a tester should be able
- * to sit down and actually use the thing — while the month stays safe.
+ * under that and is the real budget — raising it means paying.
+ *
+ * The daily figures are shaped around how a beta actually fails. It is not
+ * the month that runs out; it is the first afternoon, when everyone opens the
+ * link at once. Ten testers doing six searches each used to exhaust a
+ * sixty-a-day cap by dinner, which is the worst possible moment to show
+ * someone a wall. So the day is loose enough to absorb that burst.
+ *
+ * Per-visitor moves the other way. At twenty-five a day one enthusiastic
+ * tester could spend eleven percent of the month in an afternoon and leave
+ * nothing for the people who opened the link on Tuesday. Fifteen is still
+ * more than a real session needs — each search returns up to thirty-two
+ * passages, and every one of them is a label.
  */
 export const DEFAULT_LIMITS: LimitConfig = {
-  perVisitorPerDay: 25,
-  globalPerDay: 60,
+  perVisitorPerDay: 15,
+  globalPerDay: 150,
   globalPerMonth: 220,
 };
 
