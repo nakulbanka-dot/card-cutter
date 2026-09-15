@@ -17,6 +17,14 @@ export interface ExtractOutcome {
 /** Below this, extraction almost certainly hit a paywall or a consent wall. */
 const MIN_USABLE_CHARS = 600;
 
+/**
+ * Bot walls return a full page of text, so the length check waves them
+ * through and they rank on keyword overlap like any other source. One turned
+ * up in results titled "Checking your browser - reCAPTCHA".
+ */
+const BOT_WALL =
+  /(checking your browser|recaptcha|cloudflare|are you a robot|enable javascript to continue|access denied|verify you are human|ddos protection|attention required)/i;
+
 export async function extract(hits: Hit[]): Promise<ExtractOutcome> {
   if (hits.length === 0) return { sources: [], failed: [] };
 
@@ -45,9 +53,17 @@ export async function extract(hits: Hit[]): Promise<ExtractOutcome> {
       continue;
     }
 
+    const title = r.title ?? hit?.title ?? "";
+    // Check the title and the opening, which is where the wall announces
+    // itself; the article body may legitimately discuss any of these words.
+    if (BOT_WALL.test(title) || BOT_WALL.test(body.slice(0, 400))) {
+      failed.push({ url: r.url, reason: "the site blocked automated access" });
+      continue;
+    }
+
     sources.push({
       url: r.url,
-      title: r.title ?? hit?.title ?? r.url,
+      title: title || r.url,
       body,
       publishedAt: hit?.publishedDate,
     });
