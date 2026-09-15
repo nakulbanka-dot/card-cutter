@@ -44,6 +44,11 @@ export interface FindResponse {
   searchesLeftToday?: number;
   /** False when running on Tavily's keyless tier, which has tighter caps. */
   usingKey: boolean;
+  /**
+   * How many articles needed the paid extractor. The rest were read over
+   * plain HTTP for nothing, which is most of them.
+   */
+  paidExtractions?: number;
   terms: string[];
   sources: FoundSource[];
   skipped: { url: string; reason: string }[];
@@ -106,6 +111,11 @@ export async function findEvidence(
   const parsed = parseQuery(query);
   const client = tavilyClientInstance();
 
+  // Collected so a failing search can be told apart from a search that
+  // genuinely matched nothing. A dead API key was reporting "no results",
+  // which sends you looking for a better query instead of a working key.
+  const searchErrors: unknown[] = [];
+
   const perVariant = await mapWithConcurrency(
     searchVariants(parsed),
     3,
@@ -130,6 +140,7 @@ export async function findEvidence(
         // A keyless cap is the user's whole answer, not a dead query — let it
         // through so they see why nothing came back.
         if (err instanceof TavilyKeylessLimitError) throw err;
+        searchErrors.push(err);
         return [];
       }
     },
@@ -156,6 +167,18 @@ export async function findEvidence(
     if (hits.length >= limit) break;
   }
 
+  if (hits.length === 0 && searchErrors.length > 0) {
+    const first = searchErrors[0];
+    const message = first instanceof Error ? first.message : String(first);
+    // Surfaced rather than swallowed: every search call failed, which is a
+    // different problem from finding nothing.
+    throw new Error(
+      /401|unauthor/i.test(message)
+        ? "Search is not authorised — the API key is missing or no longer valid."
+        : "Search is unavailable right now. Try again shortly.",
+    );
+  }
+
   if (hits.length === 0) {
     return {
       query,
@@ -166,7 +189,7 @@ export async function findEvidence(
     };
   }
 
-  const { sources, failed } = await extract(hits);
+  const { sources, failed, paidExtractions } = await extract(hits);
   const skipped = [...failed];
 
   const keep = sources.filter((source) => {
@@ -184,7 +207,10 @@ export async function findEvidence(
   // Citation metadata comes from each page's own markup, so this is a plain
   // fetch per source — free, and parallel since they're independent.
   const found: FoundSource[] = await mapWithConcurrency(keep, 5, async (source) => {
-    const metadata = await fetchMetadata(source.url);
+    // Extraction already read this page's markup in most cases, so the
+    // metadata came free with it. Only the ones that needed the paid
+    // extractor still have to be fetched for their citation.
+    const metadata = source.metadata ?? (await fetchMetadata(source.url));
 
     // Tavily's title and date are decent fallbacks when the page omits them.
     if (!metadata.title && source.title) {
@@ -284,6 +310,7 @@ export async function findEvidence(
   return {
     query,
     usingKey: hasTavilyKey(),
+    paidExtractions,
     terms: parsed.terms,
     sources: found,
     skipped,
