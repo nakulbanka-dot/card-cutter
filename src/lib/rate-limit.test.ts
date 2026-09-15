@@ -5,7 +5,7 @@ import {
   DEFAULT_LIMITS, DEV_LIMITS,
 } from "./rate-limit.ts";
 
-const LIMITS = { perVisitorPerDay: 3, globalPerDay: 5 };
+const LIMITS = { perVisitorPerDay: 3, globalPerDay: 5, globalPerMonth: 100 };
 const T = new Date("2026-09-14T12:00:00Z");
 
 test("allows up to the visitor's limit, then refuses", () => {
@@ -84,4 +84,29 @@ test("development gets generous defaults, production tight ones", () => {
   assert.equal(configuredLimits(true).perVisitorPerDay, DEFAULT_LIMITS.perVisitorPerDay);
   assert.equal(configuredLimits(false).perVisitorPerDay, DEV_LIMITS.perVisitorPerDay);
   assert.ok(DEV_LIMITS.perVisitorPerDay > DEFAULT_LIMITS.perVisitorPerDay);
+});
+
+test("the monthly cap holds even when daily limits are generous", () => {
+  resetLimits();
+  // Search credits renew monthly, so a loose daily allowance can still
+  // exhaust the month. This is the ceiling that protects the budget.
+  const loose = { perVisitorPerDay: 100, globalPerDay: 100, globalPerMonth: 4 };
+  for (let i = 0; i < 4; i++) {
+    assert.equal(checkAndCount(`v${i}`, T, loose).allowed, true, `search ${i + 1}`);
+  }
+  const over = checkAndCount("someone-new", T, loose);
+  assert.equal(over.allowed, false);
+  assert.equal(over.reason, "month");
+});
+
+test("a new day does not reset the monthly cap", () => {
+  resetLimits();
+  const loose = { perVisitorPerDay: 100, globalPerDay: 100, globalPerMonth: 2 };
+  checkAndCount("a", T, loose);
+  checkAndCount("a", T, loose);
+  const nextDay = new Date("2026-09-20T09:00:00Z");
+  assert.equal(checkAndCount("a", nextDay, loose).allowed, false, "still inside the same month");
+
+  const nextMonth = new Date("2026-10-01T09:00:00Z");
+  assert.equal(checkAndCount("a", nextMonth, loose).allowed, true, "new month, new budget");
 });

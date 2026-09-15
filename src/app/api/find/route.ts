@@ -34,9 +34,11 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error:
-          gate.reason === "global"
-            ? `Card Cutter has hit its search budget for today. It resets in about ${hours} hour${hours === 1 ? "" : "s"}.`
-            : `You've used your searches for today. They reset in about ${hours} hour${hours === 1 ? "" : "s"}.`,
+          gate.reason === "month"
+            ? "Card Cutter has used its search budget for this month. It resets on the 1st."
+            : gate.reason === "global"
+              ? `Card Cutter has hit its search budget for today. It resets in about ${hours} hour${hours === 1 ? "" : "s"}.`
+              : `You've used your searches for today. They reset in about ${hours} hour${hours === 1 ? "" : "s"}.`,
       },
       { status: 429, headers: { "Retry-After": String(gate.resetInSeconds) } },
     );

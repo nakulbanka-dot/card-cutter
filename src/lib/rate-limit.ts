@@ -22,14 +22,27 @@
 export interface LimitConfig {
   perVisitorPerDay: number;
   globalPerDay: number;
+  /**
+   * The ceiling that actually matters. Search credits renew monthly, not
+   * daily, so a generous daily allowance can still exhaust the month in a
+   * week. This is the one that protects the budget; the daily numbers only
+   * stop a single person or a single afternoon running away with it.
+   */
+  globalPerMonth: number;
 }
 
 /**
- * Tight in production, where the Tavily budget is shared by every visitor.
+ * Sized for beta testing on the free search tier.
+ *
+ * The free tier is 1,000 credits a month and a search spends about four, so
+ * roughly 250 searches exist per month in total. The monthly cap sits just
+ * under that. Daily numbers are deliberately loose — a tester should be able
+ * to sit down and actually use the thing — while the month stays safe.
  */
 export const DEFAULT_LIMITS: LimitConfig = {
-  perVisitorPerDay: 5,
-  globalPerDay: 8,
+  perVisitorPerDay: 25,
+  globalPerDay: 60,
+  globalPerMonth: 220,
 };
 
 /**
@@ -40,6 +53,7 @@ export const DEFAULT_LIMITS: LimitConfig = {
 export const DEV_LIMITS: LimitConfig = {
   perVisitorPerDay: 200,
   globalPerDay: 200,
+  globalPerMonth: 5000,
 };
 
 /**
@@ -57,6 +71,7 @@ export function configuredLimits(
   return {
     perVisitorPerDay: num(process.env.SEARCH_LIMIT_PER_VISITOR, base.perVisitorPerDay),
     globalPerDay: num(process.env.SEARCH_LIMIT_GLOBAL, base.globalPerDay),
+    globalPerMonth: num(process.env.SEARCH_LIMIT_MONTHLY, base.globalPerMonth),
   };
 }
 
@@ -67,6 +82,7 @@ interface Bucket {
 
 const visitors = new Map<string, Bucket>();
 let global: Bucket = { day: "", count: 0 };
+let monthly: Bucket = { day: "", count: 0 };
 
 /** UTC day key, so the reset is predictable rather than per-visitor. */
 function today(now: Date): string {
@@ -78,7 +94,7 @@ export interface LimitResult {
   /** Searches this visitor has left today. */
   remaining: number;
   /** Which ceiling was hit, when one was. */
-  reason?: "visitor" | "global";
+  reason?: "visitor" | "global" | "month";
   /** Seconds until the counters reset. */
   resetInSeconds: number;
 }
@@ -105,6 +121,8 @@ export function checkAndCount(
   const resetInSeconds = secondsUntilMidnight(now);
 
   if (global.day !== day) global = { day, count: 0 };
+  const month = day.slice(0, 7);
+  if (monthly.day !== month) monthly = { day: month, count: 0 };
 
   let bucket = visitors.get(visitorId);
   if (!bucket || bucket.day !== day) {
@@ -114,6 +132,14 @@ export function checkAndCount(
 
   if (bucket.count >= limits.perVisitorPerDay) {
     return { allowed: false, remaining: 0, reason: "visitor", resetInSeconds };
+  }
+  if (monthly.count >= limits.globalPerMonth) {
+    return {
+      allowed: false,
+      remaining: Math.max(0, limits.perVisitorPerDay - bucket.count),
+      reason: "month",
+      resetInSeconds,
+    };
   }
   if (global.count >= limits.globalPerDay) {
     return {
@@ -126,6 +152,7 @@ export function checkAndCount(
 
   bucket.count++;
   global.count++;
+  monthly.count++;
 
   // Yesterday's visitors are dead weight; clear them when the map grows.
   if (visitors.size > 5000) {
@@ -150,4 +177,5 @@ export function visitorFrom(headers: Headers): string {
 export function resetLimits(): void {
   visitors.clear();
   global = { day: "", count: 0 };
+  monthly = { day: "", count: 0 };
 }
