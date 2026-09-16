@@ -23,7 +23,17 @@ const nextConfig: NextConfig = {
     // ml/ is data, not code, so nothing imports it and tracing cannot find it.
     // Without this the function deploys without its models and every search
     // silently falls back to keyword scoring.
-    "/api/find": ["./ml/**"],
+    "/api/find": [
+      "./ml/**",
+      // The native runtime, forced in by hand.
+      //
+      // Tracing follows JavaScript imports, and onnxruntime-node's .node
+      // binding loads libonnxruntime.so.1 through the dynamic linker, which no
+      // static analysis can see. The binding shipped without its shared
+      // library and every model load failed with "cannot open shared object
+      // file" — while the app kept answering normally on keyword scoring.
+      "./node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+    ],
   },
 
   outputFileTracingExcludes: {
