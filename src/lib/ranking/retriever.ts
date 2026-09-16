@@ -35,6 +35,8 @@ const MAX_CHARS = 1_200;
 
 let loading: Promise<FeatureExtractionPipeline> | null = null;
 let failed = false;
+/** Why the model would not load. Surfaced so a fallback is never silent. */
+let loadError: string | null = null;
 
 async function getModel(): Promise<FeatureExtractionPipeline | null> {
   // One failure means the model is not present on this machine. Retrying it
@@ -56,11 +58,17 @@ async function getModel(): Promise<FeatureExtractionPipeline | null> {
   }
   try {
     return await loading;
-  } catch {
+  } catch (err) {
     failed = true;
     loading = null;
+    loadError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     return null;
   }
+}
+
+/** The load failure, if there was one. */
+export function retrieverLoadError(): string | null {
+  return loadError;
 }
 
 function cosine(a: Float32Array | number[], b: Float32Array | number[]): number {

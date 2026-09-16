@@ -5,8 +5,8 @@ import { mapWithConcurrency } from "../concurrency";
 import { parseQuery, searchVariants } from "../terms";
 import { rankPassages, candidateParagraphs, type Passage } from "../passages";
 import { matchScore, type MatchBreakdown } from "../match-score";
-import { rankByMeaning } from "../ranking/retriever";
-import { scoreCuttable } from "../ranking/reranker";
+import { rankByMeaning, retrieverLoadError } from "../ranking/retriever";
+import { scoreCuttable, rerankerLoadError } from "../ranking/reranker";
 import { fetchMetadata } from "../metadata";
 import { toMLA, type ArticleMetadata } from "../citation";
 import { extract } from "./extract";
@@ -54,6 +54,15 @@ export interface FindResponse {
   terms: string[];
   sources: FoundSource[];
   skipped: { url: string; reason: string }[];
+  /**
+   * Why a model did not run, when one did not.
+   *
+   * A fallback to keyword scoring is a real answer and a much worse one, and
+   * without this it is indistinguishable from the models working: the
+   * response still has sources, scores and passages. The first deploy of the
+   * trained models scored nothing at all and looked completely normal.
+   */
+  modelErrors?: { retriever?: string; reranker?: string };
 }
 
 const MAX_PER_DOMAIN = 2;
@@ -336,6 +345,12 @@ export async function findEvidence(
   // read source folds its support in at the heaviest weight.
   found.sort((a, b) => b.match.score - a.match.score);
 
+  const modelErrors: { retriever?: string; reranker?: string } = {};
+  const rErr = retrieverLoadError();
+  const kErr = rerankerLoadError();
+  if (rErr) modelErrors.retriever = rErr;
+  if (kErr) modelErrors.reranker = kErr;
+
   return {
     query,
     usingKey: hasTavilyKey(),
@@ -343,5 +358,6 @@ export async function findEvidence(
     terms: parsed.terms,
     sources: found,
     skipped,
+    ...(rErr || kErr ? { modelErrors } : {}),
   };
 }

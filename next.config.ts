@@ -33,10 +33,10 @@ const nextConfig: NextConfig = {
       // rebuilt on demand and must never be traced.
       "./node_modules/@huggingface/transformers/.cache/**",
       // onnxruntime-node carries binaries for every platform it supports.
-      // Vercel runs linux x64; darwin and win32 are 158MB of dead weight.
+      // Both linux builds are kept: 18MB is cheaper than guessing wrong
+      // about whether the function runs on x64 or arm64.
       "./node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
       "./node_modules/onnxruntime-node/bin/napi-v6/win32/**",
-      "./node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**",
       // The WASM runtime is for browsers; this code runs in Node.
       "./node_modules/onnxruntime-web/**",
     ],

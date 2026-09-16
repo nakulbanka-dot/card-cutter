@@ -52,6 +52,8 @@ const MAX_TOKENS = 192;
  */
 let loading: Promise<{ model: PreTrainedModel; tokenizer: PreTrainedTokenizer }> | null = null;
 let failed = false;
+/** Why the model would not load. Surfaced so a fallback is never silent. */
+let loadError: string | null = null;
 
 async function getModel() {
   if (failed) return null;
@@ -70,11 +72,17 @@ async function getModel() {
   }
   try {
     return await loading;
-  } catch {
+  } catch (err) {
     failed = true;
     loading = null;
+    loadError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     return null;
   }
+}
+
+/** The load failure, if there was one. */
+export function rerankerLoadError(): string | null {
+  return loadError;
 }
 
 /** Whether the trained reranker is available, for reporting which path ran. */
