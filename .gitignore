@@ -49,3 +49,5 @@ next-env.d.ts
 # python training environment (torch, ~2GB)
 /.venv-train/
 /models/
+# ml/ is the slim runtime bundle and ships with the app.
+!/ml/

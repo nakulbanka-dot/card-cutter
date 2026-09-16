@@ -70,12 +70,39 @@ function hasQuantity(text: string): boolean {
   );
 }
 
+/**
+ * Every paragraph worth considering, before anything about the query is
+ * applied.
+ *
+ * Length, layout junk and the learned prose filter only — no keyword test. The
+ * retriever needs to see paragraphs that share no words with the tag, because
+ * those are precisely the ones keyword scoring was throwing away, and the
+ * reranker can only judge what it is shown.
+ */
+export function candidateParagraphs(body: string): { text: string; index: number }[] {
+  return paragraphs(body)
+    .map(({ text }, index) => ({ text, index }))
+    .filter(({ text }) =>
+      text.length >= MIN_CHARS &&
+      text.length <= MAX_CHARS &&
+      !isJunk(text) &&
+      isProse([], text));
+}
+
 export function rankPassages(
   body: string,
   terms: string[],
   limit = 4,
+  /**
+   * Paragraph text -> how well it argues the claim, from the trained
+   * retriever. When present it replaces keyword scoring entirely, INCLUDING
+   * the rule that a paragraph sharing no words with the tag is not a
+   * candidate. That rule was the ceiling on the system: a paragraph making
+   * your argument in the author's own vocabulary could never be shown.
+   */
+  semantic?: Map<string, number>,
 ): Passage[] {
-  if (terms.length === 0) return [];
+  if (terms.length === 0 && !semantic) return [];
 
   const lowerTerms = terms.map((t) => t.toLowerCase());
   const paras = paragraphs(body);
@@ -91,12 +118,20 @@ export function rankPassages(
 
     const lower = text.toLowerCase();
     const matched = lowerTerms.filter((t) => lower.includes(t));
-    if (matched.length === 0) return;
+    if (matched.length === 0 && !semantic) return;
 
     // Citation strings and tables can be dense with your terms while being
     // unreadable aloud. The learned filter catches those at the bottom of its
     // range, which is the one thing it does well.
     if (!isProse(lowerTerms, text)) return;
+
+    if (semantic) {
+      const s = semantic.get(text);
+      // Not scored means the retriever never saw it; do not invent a number.
+      if (s === undefined) return;
+      scored.push({ index, score: s, matched });
+      return;
+    }
 
     // Distinct terms matter more than repetition — a paragraph touching three
     // of your concepts beats one that says the same word five times.

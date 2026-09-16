@@ -14,11 +14,33 @@ const nextConfig: NextConfig = {
     root: path.resolve(process.cwd()),
   },
   /*
-   * The stance model ships native ONNX binaries. It is also loaded by dynamic
-   * import, so it stays out of the bundle and is resolved from node_modules
-   * when first used.
+   * The models ship native ONNX binaries. They are loaded by dynamic import,
+   * so they stay out of the bundle and resolve from node_modules on first use.
    */
   serverExternalPackages: ["@huggingface/transformers"],
+
+  outputFileTracingIncludes: {
+    // ml/ is data, not code, so nothing imports it and tracing cannot find it.
+    // Without this the function deploys without its models and every search
+    // silently falls back to keyword scoring.
+    "/api/find": ["./ml/**"],
+  },
+
+  outputFileTracingExcludes: {
+    "/api/find": [
+      // Downloaded model files from an earlier run — 366MB of cache that made
+      // the runtime look far too big for a serverless function to hold. It is
+      // rebuilt on demand and must never be traced.
+      "./node_modules/@huggingface/transformers/.cache/**",
+      // onnxruntime-node carries binaries for every platform it supports.
+      // Vercel runs linux x64; darwin and win32 are 158MB of dead weight.
+      "./node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+      "./node_modules/onnxruntime-node/bin/napi-v6/win32/**",
+      "./node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**",
+      // The WASM runtime is for browsers; this code runs in Node.
+      "./node_modules/onnxruntime-web/**",
+    ],
+  },
 };
 
 export default nextConfig;

@@ -28,7 +28,7 @@ import type { FeatureExtractionPipeline } from "@huggingface/transformers";
  */
 
 /** Local ONNX build of the trained retriever. */
-const MODEL_PATH = "models/retriever-onnx";
+const MODEL_PATH = "retriever";
 
 /** Cross-encoders are quadratic in length; a card argues in its opening. */
 const MAX_CHARS = 1_200;
@@ -45,7 +45,10 @@ async function getModel(): Promise<FeatureExtractionPipeline | null> {
       // Load from disk only. A silent download at request time would make the
       // first search after a deploy take minutes for no visible reason.
       env.allowRemoteModels = false;
-      env.localModelPath = "./";
+      // ml/ holds only what runs: the quantised graph, the tokenizer and the
+      // config. The models/ directories also carry the 91MB fp32 weights each,
+      // which would be traced into the function for nothing.
+      env.localModelPath = "./ml/";
       return pipeline("feature-extraction", MODEL_PATH, {
         dtype: "q8",
       }) as Promise<FeatureExtractionPipeline>;

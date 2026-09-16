@@ -3,9 +3,10 @@ import { defaultSourceLimit, hasTavilyKey } from "../env";
 import { tavilyClientInstance } from "../clients";
 import { mapWithConcurrency } from "../concurrency";
 import { parseQuery, searchVariants } from "../terms";
-import { rankPassages, type Passage } from "../passages";
+import { rankPassages, candidateParagraphs, type Passage } from "../passages";
 import { matchScore, type MatchBreakdown } from "../match-score";
-import { scoreStanceBatch, isRemote } from "../ranking/stance";
+import { rankByMeaning } from "../ranking/retriever";
+import { scoreCuttable } from "../ranking/reranker";
 import { fetchMetadata } from "../metadata";
 import { toMLA, type ArticleMetadata } from "../citation";
 import { extract } from "./extract";
@@ -58,42 +59,14 @@ export interface FindResponse {
 const MAX_PER_DOMAIN = 2;
 const PASSAGES_PER_SOURCE = 4;
 /**
- * Candidates the model reads before choosing.
+ * Candidates the reranker judges per source.
  *
- * Keyword scoring is only a shortlist: it is cheap and it is bad at judgment,
- * so it narrows each article to a handful of plausible paragraphs and the
- * model decides which of those actually argue the claim. Reading every
- * paragraph of every article would be better and far too slow.
- *
- * Five rather than eight. Reading is ~200ms a paragraph and the gain from the
- * last few candidates was small — they were rarely chosen.
+ * The retriever nominates them by meaning; the reranker decides which are
+ * worth cutting. Both run on this machine, so the old distinction between a
+ * local and a hosted budget is gone — and with it the cap that showed a
+ * deployed search eight passages where a local one showed twenty-four.
  */
 const CANDIDATES_PER_SOURCE = 5;
-/**
- * Fewer when scoring is hosted. A remote call is ~4.4s against ~200ms local.
- * Two still lets the model choose rather than rubber-stamp the keyword
- * favourite, which was the point.
- */
-const REMOTE_CANDIDATES_PER_SOURCE = 2;
-
-/**
- * Total hosted reads one query may spend.
- *
- * Hugging Face's free tier queues requests, so ten in parallel take about as
- * long as ten in sequence — roughly 18s either way. Concurrency cannot fix
- * that; only doing less can.
- *
- * So the budget is spent where it changes the answer. Sources are already
- * ordered by keyword match, and the model's job is to sort out the top of
- * that list — whether the leader actually argues your side. A source sitting
- * eighth on keywords is not going to win, and reading it costs the same four
- * seconds as reading the leader.
- *
- * Anything past the budget keeps its keyword-only score and ranks below
- * everything that was read, which is honest: unread is not the same as
- * judged poor.
- */
-const REMOTE_READ_BUDGET = 10;
 
 function domainOf(url: string): string {
   try {
@@ -193,12 +166,18 @@ export async function findEvidence(
   const { sources, failed, paidExtractions } = await extract(hits);
   const skipped = [...failed];
 
+  // Keep any source with readable prose in it.
+  //
+  // This used to drop a source when no paragraph mentioned the tag's words,
+  // which quietly undid the point of semantic retrieval: an article arguing
+  // your claim in the author's own vocabulary was discarded before the
+  // retriever ever saw it. The keyword test belonged to a pipeline that could
+  // only match words.
   const keep = sources.filter((source) => {
-    const passages = rankPassages(source.body, parsed.terms, PASSAGES_PER_SOURCE);
-    if (passages.length === 0) {
+    if (candidateParagraphs(source.body).length === 0) {
       skipped.push({
         url: source.url,
-        reason: "extracted fine, but no paragraph mentioned your terms",
+        reason: "extracted fine, but nothing on the page reads as prose",
       });
       return false;
     }
@@ -232,10 +211,31 @@ export async function findEvidence(
       metadata.missing = metadata.missing.filter((f) => f !== "date");
     }
 
+    // Shortlist by meaning where the retriever is available.
+    //
+    // Keyword scoring could only nominate paragraphs that reuse the tag's
+    // words, so a paragraph making the argument in the author's own
+    // vocabulary was never a candidate and the reranker never saw it.
+    // Measured over the whole test split, the retriever finds the cut
+    // paragraph in its top twenty 77% of the time against keyword's 56%.
+    //
+    // Falls back to keyword scoring when the model is not present, which is
+    // worse but honest — and reported, so a silent downgrade cannot be
+    // mistaken for the real thing.
+    const all = candidateParagraphs(source.body);
+    let semantic: Map<string, number> | undefined;
+    if (all.length > 0) {
+      const scores = await rankByMeaning(parsed.claim, all.map((p) => p.text));
+      if (scores) {
+        semantic = new Map(all.map((p, i) => [p.text, scores[i]]));
+      }
+    }
+
     const candidates = rankPassages(
       source.body,
       parsed.terms,
-      isRemote() ? REMOTE_CANDIDATES_PER_SOURCE : CANDIDATES_PER_SOURCE,
+      CANDIDATES_PER_SOURCE,
+      semantic,
     );
     const title = metadata.title ?? source.title;
 
@@ -266,12 +266,16 @@ export async function findEvidence(
   //
   // Spending the budget depth-first meant the top few sources had every
   // candidate read while the rest had none — so most passages on screen were
-  // keyword picks the model never saw, and they argued whatever the keywords
-  // happened to match. Reading one passage from every source first means
-  // nothing is shown unjudged; leftover budget then goes on second and third
-  // candidates from the strongest sources.
+  // picks the model never saw. Reading one passage from every source first
+  // means nothing is shown unjudged; leftover budget then goes on second and
+  // third candidates from the strongest sources.
   const jobs: { source: number; passage: number; title: string; text: string }[] = [];
-  const budget = isRemote() ? REMOTE_READ_BUDGET : Infinity;
+
+  // No budget any more. The reranker runs on this machine — there is no
+  // per-call network round trip to ration, which is what the budget existed
+  // for. It capped production at ten reads and was why a deployed search
+  // showed eight passages where a local one showed twenty-four.
+  const budget = Infinity;
 
   const deepest = Math.max(0, ...found.map((f) => f.passages.length));
   outer: for (let depth = 0; depth < deepest; depth++) {
@@ -283,8 +287,10 @@ export async function findEvidence(
     }
   }
 
-  const read = await scoreStanceBatch(
-    parsed.searchQuery,
+  // The claim as written, not the search query. The reranker was trained on
+  // real tags, and "solves" against "prevents" is the whole card.
+  const read = await scoreCuttable(
+    parsed.claim,
     jobs.map((j) => ({ title: j.title, text: j.text })),
   );
 
