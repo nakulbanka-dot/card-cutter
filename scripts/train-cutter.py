@@ -120,7 +120,7 @@ def run_epoch(model, loader, opt, device, sched=None, log_every=100, tag=""):
 
 
 @torch.no_grad()
-def score_split(model, tok, path, device, max_len, batch_size=64):
+def score_split(model, tok, path, device, max_len, batch_size=24):
     """Rank each article's paragraphs against its tag, the way the app does."""
     model.eval()
     groups = {}
