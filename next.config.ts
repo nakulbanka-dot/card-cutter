@@ -20,6 +20,11 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@huggingface/transformers"],
 
   outputFileTracingIncludes: {
+    // The diagnostic route needs the same files as the search route.
+    "/api/model-check": [
+      "./ml/**",
+      "./node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+    ],
     // ml/ is data, not code, so nothing imports it and tracing cannot find it.
     // Without this the function deploys without its models and every search
     // silently falls back to keyword scoring.
