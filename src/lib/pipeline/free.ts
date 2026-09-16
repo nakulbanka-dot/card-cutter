@@ -195,7 +195,13 @@ export async function findEvidence(
 
   // Citation metadata comes from each page's own markup, so this is a plain
   // fetch per source — free, and parallel since they're independent.
-  const found: FoundSource[] = await mapWithConcurrency(keep, 5, async (source) => {
+  // Two at a time, not five.
+  //
+  // Each source now runs the retriever over every paragraph it has. Five of
+  // those concurrently is what the function could not survive; the models
+  // themselves are cheap (22ms for two paragraphs) but nothing bounded how
+  // many ran together.
+  const found: FoundSource[] = await mapWithConcurrency(keep, 2, async (source) => {
     // Extraction already read this page's markup in most cases, so the
     // metadata came free with it. Only the ones that needed the paid
     // extractor still have to be fetched for their citation.

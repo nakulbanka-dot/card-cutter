@@ -33,6 +33,9 @@ const MODEL_PATH = "retriever";
 /** Cross-encoders are quadratic in length; a card argues in its opening. */
 const MAX_CHARS = 1_200;
 
+/** Paragraphs per forward pass. Bounded so a long article cannot spike. */
+const BATCH = 16;
+
 let loading: Promise<FeatureExtractionPipeline> | null = null;
 let failed = false;
 /** Why the model would not load. Surfaced so a fallback is never silent. */
@@ -119,7 +122,19 @@ export async function rankByMeaning(
     };
 
     const [q] = await embed([claim.slice(0, MAX_CHARS)]);
-    const docs = await embed(passages.map((p) => p.slice(0, MAX_CHARS)));
+
+    // In batches, not all at once.
+    //
+    // This embedded every paragraph of an article in a single forward pass,
+    // and the pipeline runs five sources concurrently — so a long article
+    // meant one enormous tensor, five at a time. Two paragraphs take 22ms in
+    // the deployed function; several hundred simultaneously is what killed it
+    // at 39 seconds, with the process dying rather than throwing.
+    const docs: number[][] = [];
+    for (let i = 0; i < passages.length; i += BATCH) {
+      const chunk = passages.slice(i, i + BATCH).map((p) => p.slice(0, MAX_CHARS));
+      docs.push(...(await embed(chunk)));
+    }
 
     return docs.map((d) => cosine(d, q));
   } catch {
