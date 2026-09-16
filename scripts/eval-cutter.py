@@ -13,6 +13,8 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 ap = argparse.ArgumentParser()
 ap.add_argument("--model", required=True)
 ap.add_argument("--split", default="val")
+ap.add_argument("--dir", default="data/training/splits2",
+                help="clustered, leak-checked splits")
 ap.add_argument("--max-len", type=int, default=192)
 ap.add_argument("--batch", type=int, default=64)
 ap.add_argument("--out", default=None)
@@ -26,7 +28,7 @@ tok = AutoTokenizer.from_pretrained(args.model)
 model = AutoModelForSequenceClassification.from_pretrained(args.model).to(device).eval()
 
 groups = {}
-for line in open(f"data/training/splits/{args.split}.jsonl"):
+for line in open(f"{args.dir}/{args.split}.jsonl"):
     if not line.strip():
         continue
     r = json.loads(line)

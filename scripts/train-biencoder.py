@@ -97,6 +97,10 @@ def main():
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--scale", type=float, default=20.0)
     ap.add_argument("--out", default="models/retriever")
+    # Save periodically. Stage 1 survived an interruption because it
+    # checkpointed; this script saved only at the end, so an OOM kill on a
+    # machine sitting at 7% free memory would have cost the whole run.
+    ap.add_argument("--save-every", type=int, default=400)
     args = ap.parse_args()
 
     device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -151,6 +155,10 @@ def main():
             opt.step(); sched.step(); opt.zero_grad(set_to_none=True)
 
             total += loss.item() * B; seen += B
+            if step % args.save_every == 0:
+                Path(args.out).mkdir(parents=True, exist_ok=True)
+                model.save_pretrained(args.out); tok.save_pretrained(args.out)
+                print(f"  checkpoint saved at step {step}", flush=True)
             if step % 100 == 0:
                 rate = seen / (time.time() - t0)
                 left = (len(dl) * args.epochs - (epoch - 1) * len(dl) - step) * B / rate / 60

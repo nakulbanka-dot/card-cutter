@@ -30,7 +30,20 @@ reductions must occur to hold warming near current targets.
 
 test("parseQuery strips filler and keeps content words", () => {
   const p = parseQuery("nuclear power solves climate change");
-  assert.deepEqual(p.terms, ["nuclear", "power", "solves", "climate", "change"]);
+  // "solves" is gone. It appears in 11,839 corpus tags and in the evidence
+  // under them 0.1% of the time, so scoring a passage on it marks that passage
+  // down for missing a word no author was going to write.
+  assert.deepEqual(p.terms, ["nuclear", "power", "climate", "change"]);
+  // The tag itself is kept whole — "solves" versus "prevents" is the whole
+  // card, and the models are the things that can tell the difference.
+  assert.equal(p.claim, "nuclear power solves climate change");
+});
+
+test("a tag made only of debate words still searches for something", () => {
+  // Every word here is below the yield threshold. Stripping them all would
+  // leave no terms and match nothing, which is worse than matching weakly.
+  const p = parseQuery("the counterplan solves the aff");
+  assert.ok(p.terms.length > 0, "terms were stripped to nothing");
 });
 
 test("search variants widen the net without changing the claim", () => {

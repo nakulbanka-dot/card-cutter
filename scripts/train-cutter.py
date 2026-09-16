@@ -152,7 +152,9 @@ def score_split(model, tok, path, device, max_len, batch_size=24):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--corpus", default="data/training/corpus-pairs.jsonl")
+    ap.add_argument("--corpus", default="data/training/corpus-pairs-hard.jsonl")
+    ap.add_argument("--splits", default="data/training/splits2",
+                    help="clustered, leak-checked splits")
     ap.add_argument("--corpus-limit", type=int, default=200_000)
     ap.add_argument("--max-len", type=int, default=192)
     ap.add_argument("--batch", type=int, default=32)
@@ -189,7 +191,7 @@ def main():
         model.save_pretrained(f"{args.out}-stage1")
         tok.save_pretrained(f"{args.out}-stage1")
 
-    train = Pairs("data/training/splits/train.jsonl")
+    train = Pairs(f"{args.splits}/train.jsonl")
     print(f"stage 2 — real articles: {len(train):,} rows")
     dl = DataLoader(train, batch_size=args.batch, shuffle=True, collate_fn=coll)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr_finetune)
@@ -201,7 +203,7 @@ def main():
     Path(args.out).mkdir(parents=True, exist_ok=True)
     for epoch in range(1, args.finetune_epochs + 1):
         run_epoch(model, dl, opt, device, sched, tag=f"ft e{epoch}")
-        scored = score_split(model, tok, "data/training/splits/val.jsonl",
+        scored = score_split(model, tok, f"{args.splits}/val.jsonl",
                              device, args.max_len)
         json.dump(scored, open("data/training/trained-val.json", "w"))
         # Selection on val precision@1 — the number the reader actually sees.
