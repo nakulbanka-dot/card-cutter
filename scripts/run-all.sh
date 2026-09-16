@@ -24,6 +24,16 @@ say "EVAL retriever (the test that decides whether it ships)"
 nice -n 10 $PY scripts/eval-retriever.py --model models/retriever --split test \
   2>&1 | grep -viE "^warning|loading weights" | tee /tmp/eval-retriever.txt
 
+# ---------- 2b. does the DEPLOYED artifact score the same? ----------
+# int8 preserved the ranking order on a probe but cut the proving-vs-topical
+# margin from 0.034 to 0.004. Shipping a quantised model without measuring it
+# is shipping an unmeasured model.
+say "EXPORT retriever to ONNX and score the quantised artifact"
+nice -n 10 $PY scripts/export-retriever-onnx.py 2>&1 | tail -6
+nice -n 10 $PY scripts/eval-retriever.py --model models/retriever-onnx \
+  --onnx models/retriever-onnx/onnx/model_quantized.onnx --split test \
+  2>&1 | grep -viE "^warning|loading weights" | tee /tmp/eval-retriever-int8.txt
+
 # ---------- 3. cross-encoder, retrained on leak-free data ----------
 # The existing checkpoint learned from a corpus that contained held-out text.
 # It has to be retrained before any of its numbers mean anything.
@@ -52,3 +62,4 @@ say "ALL DONE"
 echo "retriever   : /tmp/eval-retriever.txt"
 echo "cross-enc   : /tmp/eval-cutter2.txt"
 echo "highlighter : /tmp/train-highlighter.txt"
+echo "int8 check  : /tmp/eval-retriever-int8.txt"

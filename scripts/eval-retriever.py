@@ -49,6 +49,12 @@ def main():
     ap.add_argument("--model", default="models/retriever")
     ap.add_argument("--split", default="test")
     ap.add_argument("--dir", default="data/training/splits2")
+    # Quantisation can preserve the ranking order while collapsing the margin
+    # that produces it. A probe showed proving-vs-topical falling from 0.034 to
+    # 0.004 under int8 — the file loads, nothing errors, and retrieval quietly
+    # gets worse. So the deployed artifact is measured, not assumed.
+    ap.add_argument("--onnx", default=None,
+                    help="path to a quantized .onnx to score instead of the torch model")
     args = ap.parse_args()
 
     rows = [json.loads(l) for l in open(f"{args.dir}/{args.split}.jsonl") if l.strip()]
@@ -62,12 +68,32 @@ def main():
 
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     tok = AutoTokenizer.from_pretrained(args.model)
-    model = AutoModel.from_pretrained(args.model).to(device)
+
+    if args.onnx:
+        import numpy as np, onnxruntime as ort
+        sess = ort.InferenceSession(args.onnx, providers=["CPUExecutionProvider"])
+        print(f"scoring the ONNX artifact: {args.onnx}", flush=True)
+
+        def embed_any(texts, max_len, batch=32):
+            out = []
+            for i in range(0, len(texts), batch):
+                e = tok(texts[i:i + batch], padding=True, truncation=True,
+                        max_length=max_len, return_tensors="np")
+                h = sess.run(None, {k: v for k, v in e.items()})[0]
+                m = e["attention_mask"][..., None].astype("float32")
+                v = (h * m).sum(1) / np.clip(m.sum(1), 1e-9, None)
+                out.append(torch.tensor(v / np.linalg.norm(v, axis=-1, keepdims=True)))
+            return torch.cat(out)
+    else:
+        model = AutoModel.from_pretrained(args.model).to(device)
+
+        def embed_any(texts, max_len):
+            return embed(model, tok, texts, device, max_len)
 
     print("embedding paragraphs ...", flush=True)
-    P = embed(model, tok, [r["text"] for r in rows], device, 160)
+    P = embed_any([r["text"] for r in rows], 160)
     print("embedding tags ...", flush=True)
-    Q = embed(model, tok, [k[1] for k, _ in usable], device, 48)
+    Q = embed_any([k[1] for k, _ in usable], 48)
 
     # ---------- within-article ----------
     def report_within(score_of, name):
