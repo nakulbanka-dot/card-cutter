@@ -11,33 +11,35 @@ someone stops and clicks. Those are the examples that teach the ranking what
 
 ## Paste this
 
-> **Card Cutter — try it and tell me what's wrong with it**
+> **Card Cutter — try it and tell me what's broken**
 >
 > https://card-cutter-gules.vercel.app/cut
 >
-> Type a tag the way you'd actually write one on a card — 5 to 10 words, take
-> a position. "Nuclear power solves climate change", not "nuclear power".
+> Type a tag the way you'd actually write one on a card. 5-10 words, take a
+> position. "Nuclear power solves climate change" — not "nuclear power."
 >
 > It searches, pulls the full text of each article, and shows you the
-> paragraphs worth cutting, with the citation already built. Give it about 20
-> seconds; it's reading real articles, not faking a loading bar.
+> paragraphs worth cutting with the citation already built. Give it about
+> thirty seconds. It is running a model trained on 4.8 million real debate
+> cards, actually reading every paragraph, not faking a loading bar.
 >
-> **The part I actually need:** hit **Cut this** when a passage is good, and
-> **Not useful** when it isn't. The "Not useful" clicks are worth more to me
-> than the good ones — they're what teaches it the difference between a
-> paragraph that mentions your topic and one that argues your tag.
+> **The part I actually need from you:** hit **Cut this** when a passage is
+> good, **Not useful** when it isn't.
 >
-> Don't be polite about it. If everything on screen is bad, mark everything bad.
+> The "Not useful" clicks are worth more to me than the good ones. Those are
+> what teach it the difference between a paragraph that is about your topic and
+> one that proves your tag. Don't be polite — if everything on screen is bad,
+> mark everything bad.
 >
-> Things worth telling me:
+> Worth telling me about:
 > - a tag where it found nothing usable
-> - a passage that argues the opposite of what you asked
+> - a passage that argues the opposite of what you asked (known weak spot,
+>   examples wanted)
 > - a citation that looks wrong
-> - anything that felt slow, confusing, or broken
+> - anything slow, confusing, or broken
 >
-> No login, nothing to install. Works on your phone.
-
----
+> No login, nothing to install. Works on your phone. About fifteen searches per
+> person per day.
 
 ## Before you send it
 
@@ -49,8 +51,14 @@ someone stops and clicks. Those are the examples that teach the ranking what
 - [x] Feedback storage confirmed live in production — `/api/feedback` reports
       `"storage":"redis"`. A tester session with storage off produces nothing
       and cannot be replayed.
-- [ ] Deploy. The fixes above are committed but not pushed.
+- [x] **The trained models are live in production.** Verified end to end:
+      8 sources, 32 passages, 32 of 32 judged by the model, no fallback.
+      Memory peaked at 252MB of the 1024MB this plan allows, so nothing needs
+      paying for.
 - [ ] Do one search yourself on the deployed site, not localhost.
+- [ ] Send it to about ten people, not fifty. The monthly cap is 220 searches
+      in total: ten testers doing fifteen each is comfortable, fifty will hit
+      a wall and spend the first impression on it.
 
 ## Owed after the trained model ships
 
