@@ -32,7 +32,16 @@ model = AutoModelForSequenceClassification.from_pretrained(args.model).eval()
 tok.save_pretrained(out)
 model.config.save_pretrained(out)
 
-enc = tok("a claim about nuclear power", "a paragraph of evidence supporting it",
+# Two examples, not one.
+#
+# With a dummy batch of 1 every axis of length 1 looks alike, and the
+# quantiser's shape inference resolved the classifier output against the
+# hidden size instead of the batch: "Inferred shape and existing shape differ
+# in dimension 0: (384) vs (1)". A batch of 2 makes the batch axis
+# unambiguous. The retriever escaped this because its output has three
+# dimensions; a (batch, 1) output is exactly the ambiguous case.
+enc = tok(["a claim about nuclear power", "a second claim, so batch > 1"],
+          ["a paragraph of evidence supporting it", "another paragraph of evidence"],
           return_tensors="pt", padding="max_length", truncation=True,
           max_length=args.max_len)
 inputs = (enc["input_ids"], enc["attention_mask"], enc["token_type_ids"])
@@ -52,6 +61,15 @@ torch.onnx.export(
     },
     opset_version=17,
     do_constant_folding=True,
+    # Legacy TorchScript exporter, not the dynamo one torch 2.14 defaults to.
+    #
+    # The dynamo graph is correct — it loads and returns (2, 1) — but it lowers
+    # the CLS pick as Gather followed by Gemm in a way onnx's shape inference
+    # misreads, resolving the classifier output against the hidden size:
+    # "differ in dimension 0: (384) vs (1)". That fails inside quantize_dynamic,
+    # so there is no int8 file at all. The retriever avoided it by returning a
+    # three-dimensional tensor; a (batch, 1) output is the ambiguous case.
+    dynamo=False,
 )
 print(f"fp32  {fp32.stat().st_size / 1e6:.1f} MB")
 
