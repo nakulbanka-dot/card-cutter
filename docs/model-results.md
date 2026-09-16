@@ -100,6 +100,20 @@ when negatives came only from the same file. With four kinds — near-tag,
 opposite-side, same-topic, random — epoch 2 holds flat at 0.6621 instead of
 collapsing.
 
+## Running them in production
+
+Both models are behind `USE_TRAINED_MODELS=1`. Without it the app runs the
+keyword path, which is worse and works.
+
+The gate exists because the first deploy with both models loaded did not throw
+— the function died, so the route's error handling never ran and every search
+returned an HTML error page. A search that fails is worse than a weaker one.
+
+`/api/model-check` loads each model in turn on its own route and reports RSS
+between stages, so the question can be asked without taking search down to ask
+it. The plan here is Hobby, which caps a function at 1024MB; the baseline with
+nothing loaded is 84MB.
+
 ## Not done
 
 - Nothing is wired into the app yet beyond `src/lib/ranking/retriever.ts`.
