@@ -122,11 +122,19 @@ export function TrainingCounter() {
           ))}
         </dl>
 
-        {/* Said plainly, because the alternative is letting the big number imply it. */}
+        {/*
+          Was "learns from these to judge which sources are worth your time"
+          while the judging was done by a general-purpose model that had never
+          seen a debate card — and which measured worse than counting keywords.
+          It is true now, so it can say what it actually does instead.
+        */}
         <p className="mt-6 max-w-2xl text-xs leading-relaxed text-faint">
-          Card Cutter learns from these to judge which sources are worth your
-          time. It never reuses their text — every card it hands you is cut
-          fresh from the article it names.
+          These cards trained the two models that do the work: one finds the
+          paragraph, the other decides whether it proves your tag. On articles
+          they had never seen, they pick a passage a real debater cut about two
+          times in three — against roughly one in two for the keyword matching
+          they replaced. They never reuse a card&rsquo;s text; every passage is
+          cut fresh from the article it names.
         </p>
       </div>
     </section>

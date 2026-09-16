@@ -60,13 +60,12 @@ someone stops and clicks. Those are the examples that teach the ranking what
       in total: ten testers doing fifteen each is comfortable, fifty will hit
       a wall and spend the first impression on it.
 
-## Owed after the trained model ships
+## Done since
 
-- [ ] **Homepage copy.** It currently says Card Cutter "learns from these to
-      judge which sources are worth your time." That is not true today — the
-      corpus trained a junk filter and nothing more. It becomes true when the
-      card-trained ranker replaces the borrowed NLI model, which is why it is
-      being corrected then rather than twice.
+- [x] **Homepage copy.** It claimed the corpus taught the app to judge sources
+      while the judging was done by a general-purpose model that had never seen
+      a card. That is true now, so the page says what the models actually do
+      and quotes the measured figure rather than implying one.
 
 ## After
 
