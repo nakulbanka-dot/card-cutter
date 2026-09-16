@@ -55,7 +55,26 @@ let failed = false;
 /** Why the model would not load. Surfaced so a fallback is never silent. */
 let loadError: string | null = null;
 
+
+/**
+ * Off unless explicitly switched on.
+ *
+ * The first deploy with both models loaded crashed the function outright —
+ * not an exception the route could catch and report, but the process going
+ * away, which reaches the user as an HTML error page and a failed search.
+ * Two ONNX runtimes plus the tensors for a few hundred paragraphs is a lot to
+ * ask of a serverless function's memory.
+ *
+ * So the models are opt-in. Without the flag the app runs the keyword path it
+ * ran before, which is worse and works. A broken search is worse than a
+ * weaker one.
+ */
+function enabled(): boolean {
+  return process.env.USE_TRAINED_MODELS === "1";
+}
+
 async function getModel() {
+  if (!enabled()) return null;
   if (failed) return null;
   if (!loading) {
     loading = import("@huggingface/transformers").then(
