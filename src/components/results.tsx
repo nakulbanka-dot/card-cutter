@@ -8,6 +8,7 @@ import { formatCite, citeGaps } from "@/lib/cite-format";
 import { useSettings } from "@/lib/settings";
 import type { FindResponse, FoundSource } from "@/lib/pipeline/free";
 import type { Action, PassageFeatures } from "@/lib/feedback";
+import { cardHtml, cardText } from "@/lib/card-html";
 
 /**
  * Results as two panes: every source on the left so you can see the whole
@@ -29,6 +30,8 @@ export function Results({ result }: { result: FindResponse }) {
   const [selected, setSelected] = useState(0);
   const [acted, setActed] = useState<Record<string, Action>>({});
   const [copied, setCopied] = useState<string | null>(null);
+  const [cutting, setCutting] = useState<string | null>(null);
+  const [underlined, setUnderlined] = useState<Record<string, number>>({});
   const { settings } = useSettings();
 
   const source = result.sources[selected];
@@ -43,6 +46,53 @@ export function Results({ result }: { result: FindResponse }) {
     await navigator.clipboard.writeText(text);
     setCopied(key);
     setTimeout(() => setCopied(null), 1600);
+  }
+
+  /**
+   * Copy a card with its underlining, the way it goes into Verbatim.
+   *
+   * Plain text loses the marks, and the marks are the cutting — a card without
+   * them is a quotation, and the pass has to be redone by hand in Word. Writing
+   * text/html alongside text/plain lets Word take the formatted version while
+   * anything else falls back to the whole passage.
+   */
+  async function copyCard(i: number, cite: string, key: string) {
+    const passage = source.passages[i].text;
+    setCutting(key);
+    try {
+      let sentences: { start: number; end: number; mark: boolean; text: string }[] = [];
+      try {
+        const res = await fetch("/api/underline", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ claim: result.query, passage }),
+        });
+        if (res.ok) sentences = (await res.json()).sentences ?? [];
+      } catch {
+        // An unmarked card is still a card; failing to underline must not
+        // cost the user the passage they asked for.
+      }
+
+      const html = cardHtml({ tag: result.query, cite, sentences, passage });
+      const plain = cardText({ tag: result.query, cite, sentences, passage });
+
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/html": new Blob([html], { type: "text/html" }),
+            "text/plain": new Blob([plain], { type: "text/plain" }),
+          }),
+        ]);
+      } catch {
+        // Safari and older browsers reject ClipboardItem; the text still goes.
+        await navigator.clipboard.writeText(plain);
+      }
+      setUnderlined((u) => ({ ...u, [key]: sentences.filter((s) => s.mark).length }));
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1600);
+    } finally {
+      setCutting(null);
+    }
   }
 
   function featuresFor(src: FoundSource, i: number, srcIndex: number): PassageFeatures {
@@ -268,19 +318,24 @@ export function Results({ result }: { result: FindResponse }) {
                     </span>
                   )}
                   {acted[key] === "cut" ? (
-                    <span className="text-xs font-medium text-good">Copied with citation</span>
+                    <span className="text-xs font-medium text-good">
+                      {underlined[key]
+                        ? `Cut — ${underlined[key]} sentences underlined`
+                        : "Copied with citation"}
+                    </span>
                   ) : acted[key] === "reject" ? (
                     <span className="text-xs text-faint">Marked not useful</span>
                   ) : (
                     <>
                       <button
                         onClick={async () => {
-                          await copy(`${cite}\n\n${p.text}`, key);
+                          await copyCard(i, cite, key);
                           await record(i, "cut");
                         }}
-                        className="rounded-md bg-fg px-3 py-1.5 text-xs font-medium text-bg transition-opacity hover:opacity-90"
+                        disabled={cutting === key}
+                        className="rounded-md bg-fg px-3 py-1.5 text-xs font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-60"
                       >
-                        Cut this
+                        {cutting === key ? "Cutting…" : "Cut this"}
                       </button>
                       {/*
                         Given equal weight to "Cut this" on purpose.
