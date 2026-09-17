@@ -32,6 +32,7 @@ export function Results({ result }: { result: FindResponse }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [cutting, setCutting] = useState<string | null>(null);
   const [underlined, setUnderlined] = useState<Record<string, number>>({});
+  const [copyFailed, setCopyFailed] = useState<string | null>(null);
   const { settings } = useSettings();
 
   const source = result.sources[selected];
@@ -76,6 +77,14 @@ export function Results({ result }: { result: FindResponse }) {
       const html = cardHtml({ tag: result.query, cite, sentences, passage });
       const plain = cardText({ tag: result.query, cite, sentences, passage });
 
+      // Neither clipboard call may throw past here.
+      //
+      // The fallback writeText threw NotAllowedError when the page did not
+      // have permission, the exception escaped, and everything after it was
+      // skipped — including the label this card was supposed to record. A
+      // browser refusing the clipboard silently cost a training example, which
+      // is the one thing the beta exists to collect.
+      let ok = false;
       try {
         await navigator.clipboard.write([
           new ClipboardItem({
@@ -83,13 +92,26 @@ export function Results({ result }: { result: FindResponse }) {
             "text/plain": new Blob([plain], { type: "text/plain" }),
           }),
         ]);
+        ok = true;
       } catch {
-        // Safari and older browsers reject ClipboardItem; the text still goes.
-        await navigator.clipboard.writeText(plain);
+        try {
+          // Safari and older browsers reject ClipboardItem; the text still goes.
+          await navigator.clipboard.writeText(plain);
+          ok = true;
+        } catch {
+          ok = false;
+        }
       }
+
       setUnderlined((u) => ({ ...u, [key]: sentences.filter((s) => s.mark).length }));
-      setCopied(key);
-      setTimeout(() => setCopied(null), 1600);
+      if (ok) {
+        setCopied(key);
+        setTimeout(() => setCopied(null), 1600);
+      } else {
+        // Say so. A card that looks copied and is not wastes a round.
+        setCopyFailed(key);
+        setTimeout(() => setCopyFailed(null), 4000);
+      }
     } finally {
       setCutting(null);
     }
@@ -318,10 +340,16 @@ export function Results({ result }: { result: FindResponse }) {
                     </span>
                   )}
                   {acted[key] === "cut" ? (
-                    <span className="text-xs font-medium text-good">
-                      {underlined[key]
-                        ? `Cut — ${underlined[key]} sentences underlined`
-                        : "Copied with citation"}
+                    <span
+                      className={`text-xs font-medium ${
+                        copyFailed === key ? "text-warn" : "text-good"
+                      }`}
+                    >
+                      {copyFailed === key
+                        ? "Cut, but your browser blocked the copy — select the passage instead"
+                        : underlined[key]
+                          ? `Cut — ${underlined[key]} sentences underlined`
+                          : "Copied with citation"}
                     </span>
                   ) : acted[key] === "reject" ? (
                     <span className="text-xs text-faint">Marked not useful</span>
@@ -329,8 +357,14 @@ export function Results({ result }: { result: FindResponse }) {
                     <>
                       <button
                         onClick={async () => {
-                          await copyCard(i, cite, key);
-                          await record(i, "cut");
+                          // The label is recorded whatever the clipboard
+                          // does. A browser refusing to copy is not the user
+                          // saying the passage was bad.
+                          try {
+                            await copyCard(i, cite, key);
+                          } finally {
+                            await record(i, "cut");
+                          }
                         }}
                         disabled={cutting === key}
                         className="rounded-md bg-fg px-3 py-1.5 text-xs font-medium text-bg transition-opacity hover:opacity-90 disabled:opacity-60"
