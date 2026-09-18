@@ -13,6 +13,26 @@ const nextConfig: NextConfig = {
      */
     root: path.resolve(process.cwd()),
   },
+
+  /*
+   * Keep the model files out of the build's way.
+   *
+   * ml/ is 68MB of ONNX binaries and tokenizer JSON sitting in the project
+   * root. Nothing imports it — it is read from disk at runtime — but it is in
+   * the tree the build walks, and the build began failing intermittently on
+   * the CSS step with "Node.js subprocess crashed while evaluating loaders
+   * [postcss]: timeout while receiving message". The same commit failed once
+   * and passed on a rerun, so it is a resource edge rather than a broken
+   * build, and 68MB of binaries is the thing that moved it there.
+   *
+   * Pinning the tracing root is the only lever here that is real. Turbopack
+   * has no ignore list in this version — watchOptions takes pollIntervalMs and
+   * nothing else, which typecheck caught before it shipped as a config that
+   * looked like it was doing something. If the flake persists the fix is to
+   * move the models out of the project tree and fetch them at build time, not
+   * another option that does not exist.
+   */
+  outputFileTracingRoot: path.resolve(process.cwd()),
   /*
    * The models ship native ONNX binaries. They are loaded by dynamic import,
    * so they stay out of the bundle and resolve from node_modules on first use.
