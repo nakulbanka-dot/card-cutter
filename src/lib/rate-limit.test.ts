@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   checkAndCount, resetLimits, visitorFrom, configuredLimits,
-  DEFAULT_LIMITS, DEV_LIMITS,
+  DEFAULT_LIMITS, DEV_LIMITS, checkPerHour,
 } from "./rate-limit.ts";
 
 const LIMITS = { perVisitorPerDay: 3, globalPerDay: 5, globalPerMonth: 100 };
@@ -109,4 +109,38 @@ test("a new day does not reset the monthly cap", () => {
 
   const nextMonth = new Date("2026-10-01T09:00:00Z");
   assert.equal(checkAndCount("a", nextMonth, loose).allowed, true, "new month, new budget");
+});
+
+test("per-hour cap lets a real session through and stops a script", () => {
+  const at = new Date("2026-09-18T10:00:00Z");
+  // A debater cutting every passage of two full searches: 64 calls.
+  let allowed = 0;
+  for (let i = 0; i < 64; i++) {
+    if (checkPerHour("underline", "1.2.3.4", 60, at).allowed) allowed++;
+  }
+  assert.equal(allowed, 60, "the cap should bite at exactly 60");
+});
+
+test("one IP hitting the cap does not affect another", () => {
+  const at = new Date("2026-09-18T11:00:00Z");
+  for (let i = 0; i < 60; i++) checkPerHour("underline", "9.9.9.9", 60, at);
+  assert.equal(checkPerHour("underline", "9.9.9.9", 60, at).allowed, false);
+  assert.equal(checkPerHour("underline", "8.8.8.8", 60, at).allowed, true,
+    "a different visitor was punished for someone else's traffic");
+});
+
+test("the counter resets on the hour", () => {
+  const ten = new Date("2026-09-18T12:30:00Z");
+  for (let i = 0; i < 60; i++) checkPerHour("underline", "7.7.7.7", 60, ten);
+  assert.equal(checkPerHour("underline", "7.7.7.7", 60, ten).allowed, false);
+  const eleven = new Date("2026-09-18T13:00:00Z");
+  assert.equal(checkPerHour("underline", "7.7.7.7", 60, eleven).allowed, true);
+});
+
+test("separate endpoints have separate budgets", () => {
+  const at = new Date("2026-09-18T14:00:00Z");
+  for (let i = 0; i < 60; i++) checkPerHour("underline", "5.5.5.5", 60, at);
+  assert.equal(checkPerHour("underline", "5.5.5.5", 60, at).allowed, false);
+  assert.equal(checkPerHour("feedback", "5.5.5.5", 200, at).allowed, true,
+    "cutting cards should not use up the labels budget");
 });

@@ -1,4 +1,5 @@
 import { markUnderlines, highlighterLoadError } from "@/lib/ranking/highlighter";
+import { checkPerHour, visitorFrom } from "@/lib/rate-limit";
 
 /**
  * POST /api/underline — mark the sentences that do the argumentative work.
@@ -21,6 +22,16 @@ export async function POST(request: Request) {
     body = (await request.json()) as Body;
   } catch {
     return Response.json({ error: "expected a JSON body" }, { status: 400 });
+  }
+
+  // 60 an hour per IP. A search returns 32 passages, so a debater cutting
+  // everything they were shown twice over still never sees this.
+  const gate = checkPerHour("underline", visitorFrom(request.headers), 60);
+  if (!gate.allowed) {
+    return Response.json(
+      { error: "Too many cards at once — try again shortly." },
+      { status: 429, headers: { "Retry-After": String(gate.resetInSeconds) } },
+    );
   }
 
   const claim = body.claim?.trim();
