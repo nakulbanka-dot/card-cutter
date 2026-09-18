@@ -1,9 +1,21 @@
 import {
   logFeedback, readFeedback, computeStats, activeBackend, type FeedbackRow,
 } from "@/lib/feedback";
+import { checkPerHour, visitorFrom } from "@/lib/rate-limit";
 
 /** POST — record one label. GET — training-set stats. */
 export async function POST(request: Request) {
+  // 200 an hour per IP. Every passage on screen can be labelled twice over
+  // and a real session never approaches it, but a script cannot fill the
+  // database unattended.
+  const gate = checkPerHour("feedback", visitorFrom(request.headers), 200);
+  if (!gate.allowed) {
+    return Response.json(
+      { error: "Too many labels at once." },
+      { status: 429, headers: { "Retry-After": String(gate.resetInSeconds) } },
+    );
+  }
+
   try {
     const row = (await request.json()) as FeedbackRow;
     if (!row?.url || !row?.action) {

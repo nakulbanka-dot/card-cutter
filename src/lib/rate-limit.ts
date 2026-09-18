@@ -190,3 +190,53 @@ export function resetLimits(): void {
   global = { day: "", count: 0 };
   monthly = { day: "", count: 0 };
 }
+
+/**
+ * A simple per-IP cap for the endpoints that are not searches.
+ *
+ * Searching is metered against a real bill — every query spends Tavily credits
+ * out of a fixed monthly budget, which is why it has a global cap as well as a
+ * per-visitor one. Underlining and feedback cost no credits, so a shared
+ * monthly budget would be the wrong shape: one visitor could exhaust the
+ * month for everyone over something that costs nothing.
+ *
+ * They are not free either. Underlining runs a model per request and feedback
+ * writes a row, so left ungated they are a way to spend the function's time
+ * and fill the database. This bounds each IP per hour and nothing else.
+ */
+const buckets = new Map<string, { hour: string; count: number }>();
+
+export interface SimpleLimit {
+  allowed: boolean;
+  remaining: number;
+  resetInSeconds: number;
+}
+
+export function checkPerHour(
+  key: string,
+  visitorId: string,
+  perHour: number,
+  now: Date = new Date(),
+): SimpleLimit {
+  const hour = now.toISOString().slice(0, 13);
+  const id = `${key}:${visitorId}`;
+
+  let bucket = buckets.get(id);
+  if (!bucket || bucket.hour !== hour) {
+    bucket = { hour, count: 0 };
+    buckets.set(id, bucket);
+  }
+
+  // Unbounded growth would be its own denial of service; an IP that has not
+  // been seen this hour has no reason to stay in the map.
+  if (buckets.size > 10_000) {
+    for (const [k, v] of buckets) if (v.hour !== hour) buckets.delete(k);
+  }
+
+  const resetInSeconds = 3600 - (now.getUTCMinutes() * 60 + now.getUTCSeconds());
+  if (bucket.count >= perHour) {
+    return { allowed: false, remaining: 0, resetInSeconds };
+  }
+  bucket.count += 1;
+  return { allowed: true, remaining: perHour - bucket.count, resetInSeconds };
+}
