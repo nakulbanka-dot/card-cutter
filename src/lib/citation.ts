@@ -13,6 +13,15 @@
 export interface ArticleMetadata {
   /** Author names as printed, e.g. ["Wei Chen", "John Smith"]. */
   authors: string[];
+  /**
+   * What an author is, keyed by their printed name — "Senior Fellow, Brookings".
+   *
+   * A cite without quals is weaker in a round: the other team asks who this
+   * person is and the answer is nothing. Publishers routinely ship it in the
+   * page's own markup and it was being thrown away, so this costs no extra
+   * request. Absent for authors whose page said nothing.
+   */
+  authorQuals?: Record<string, string>;
   /** Article headline. */
   title?: string;
   /** The website or publication, e.g. "Brookings Institution". */

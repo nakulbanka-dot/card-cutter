@@ -121,6 +121,16 @@ export default function SettingsPage() {
         </Field>
 
         <Field
+          label="Author qualifications"
+          hint="Puts what an author is after their name — read off the page when the publisher provides it. When it does not, [AUTHOR QUALS] goes in so you know to look it up rather than finding out in a round."
+        >
+          <Toggle
+            on={settings.authorQuals}
+            onChange={(v) => update({ authorQuals: v })}
+          />
+        </Field>
+
+        <Field
           label="Include date of access"
           hint="Adds DOA with the date you pulled the source — some circuits expect it."
         >

@@ -24,7 +24,26 @@ export interface CiteOptions {
   includeAccessDate: boolean;
   /** Debate cite, or a plain MLA works-cited entry. */
   style: "debate" | "mla";
+  /**
+   * Put each author's qualifications after their name.
+   *
+   * Read off the page's own markup when the publisher provides it. When it
+   * does not, a placeholder goes in instead of nothing — a cite that silently
+   * omits quals looks finished, and the debater finds out in a round. A
+   * visible AUTHOR QUALS says "you still have to look this up".
+   */
+  authorQuals: boolean;
 }
+
+/**
+ * What goes in when the page did not say who the author is.
+ *
+ * No square brackets, deliberately. Wrapping it in them meant switching the
+ * "brackets" setting off still produced a cite full of brackets — the two
+ * settings fought each other, and a test caught it. Capitals are enough to
+ * read as a blank to fill rather than as something the article said.
+ */
+export const QUALS_PLACEHOLDER = "AUTHOR QUALS";
 
 export const DEFAULT_CITE_OPTIONS: CiteOptions = {
   suffix: "",
@@ -32,7 +51,32 @@ export const DEFAULT_CITE_OPTIONS: CiteOptions = {
   brackets: true,
   includeAccessDate: true,
   style: "debate",
+  // On by default. Quals are most of what makes a card persuasive, and a
+  // debater who does not want them can turn them off in one click; one who
+  // needed them and never saw the field loses the round.
+  authorQuals: true,
 };
+
+/**
+ * "Wei Chen, Senior Fellow, Brookings and John Smith [AUTHOR QUALS]"
+ *
+ * Every author gets something after their name, found or not, so a missing
+ * qualification is visible rather than absent.
+ */
+function withQuals(
+  authors: string[],
+  quals: Record<string, string> | undefined,
+  on: boolean,
+): string {
+  if (!on) return authors.join(" and ");
+  return authors
+    .map((a) => {
+      const q = quals?.[a] ?? Object.entries(quals ?? {})
+        .find(([k]) => k.toLowerCase() === a.toLowerCase())?.[1];
+      return q ? `${a}, ${q}` : `${a} ${QUALS_PLACEHOLDER}`;
+    })
+    .join(" and ");
+}
 
 /** Surnames only, for the spoken part of the cite. */
 function surnames(authors: string[]): string | undefined {
@@ -92,7 +136,9 @@ export function formatCite(
 
   // ---- bracketed detail ----
   const detail: string[] = [];
-  if (meta.authors.length > 0) detail.push(meta.authors.join(" and "));
+  if (meta.authors.length > 0) {
+    detail.push(withQuals(meta.authors, meta.authorQuals, o.authorQuals));
+  }
   // Only name the outlet here if it isn't already standing in as the author.
   if (meta.container && names) detail.push(meta.container);
   if (meta.title) detail.push(`"${meta.title.replace(/["“”]/g, "")}"`);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatCite, DEFAULT_CITE_OPTIONS } from "./cite-format.ts";
+import { formatCite, DEFAULT_CITE_OPTIONS, QUALS_PLACEHOLDER } from "./cite-format.ts";
 import type { ArticleMetadata } from "./citation.ts";
 
 const ACCESSED = new Date("2026-09-14T00:00:00Z");
@@ -40,7 +40,8 @@ test("a user suffix is appended with the chosen separator", () => {
 test("brackets can be turned off without losing the detail", () => {
   const plain = formatCite(META, { brackets: false }, ACCESSED);
   assert.ok(!plain.includes("["));
-  assert.ok(plain.includes("Jane Nakano and Yu-Hsuan Yeh"));
+  assert.ok(plain.includes("Jane Nakano"));
+  assert.ok(plain.includes("Yu-Hsuan Yeh"));
 });
 
 test("access date is included by default and can be dropped", () => {
@@ -53,7 +54,8 @@ test("three or more authors collapse to et al. in the head only", () => {
   const cite = formatCite(many, {}, ACCESSED);
   assert.ok(cite.startsWith("Okonkwo et al. 25,"));
   // The bracket still lists everyone, so the card can be verified.
-  assert.ok(cite.includes("Ada Okonkwo and Wei Chen and Jane Doe"));
+  // Everyone is still listed, each with their own quals slot.
+  assert.ok(cite.includes("Ada Okonkwo AUTHOR QUALS and Wei Chen AUTHOR QUALS and Jane Doe"));
 });
 
 test("an author-less institutional source falls back to the outlet", () => {
@@ -81,4 +83,64 @@ test("mla style is available and still takes the suffix", () => {
 
 test("the url never keeps its protocol", () => {
   assert.ok(!formatCite(META, {}, ACCESSED).includes("https://"));
+});
+
+test("author quals from the page go after the name", () => {
+  const cite = formatCite({
+    authors: ["Wei Chen"],
+    authorQuals: { "Wei Chen": "Senior Fellow, Brookings" },
+    title: "Nuclear and the grid",
+    container: "Brookings",
+    published: "2025-03-12",
+    url: "https://example.org/a",
+    missing: [],
+  });
+  assert.match(cite, /Wei Chen, Senior Fellow, Brookings/);
+  assert.ok(!cite.includes(QUALS_PLACEHOLDER), "found quals should not be a placeholder");
+});
+
+test("a missing qualification is visible, not silently dropped", () => {
+  // The failure that matters: a cite that looks finished and is not. The
+  // debater finds out when the other team asks who this person is.
+  const cite = formatCite({
+    authors: ["John Smith"],
+    title: "A piece",
+    url: "https://example.org/b",
+    missing: [],
+  });
+  assert.ok(cite.includes(QUALS_PLACEHOLDER), "no marker for the missing quals");
+});
+
+test("each author gets their own, found or not", () => {
+  const cite = formatCite({
+    authors: ["Wei Chen", "John Smith"],
+    authorQuals: { "Wei Chen": "Senior Fellow, Brookings" },
+    url: "https://example.org/c",
+    missing: [],
+  });
+  assert.match(cite, /Wei Chen, Senior Fellow, Brookings and John Smith AUTHOR QUALS/);
+});
+
+test("quals can be turned off", () => {
+  const cite = formatCite(
+    {
+      authors: ["Wei Chen"],
+      authorQuals: { "Wei Chen": "Senior Fellow, Brookings" },
+      url: "https://example.org/d",
+      missing: [],
+    },
+    { authorQuals: false },
+  );
+  assert.ok(!cite.includes("Senior Fellow"));
+  assert.ok(!cite.includes(QUALS_PLACEHOLDER));
+});
+
+test("matches the author even when the markup capitalises differently", () => {
+  const cite = formatCite({
+    authors: ["Wei Chen"],
+    authorQuals: { "wei chen": "Senior Fellow, Brookings" },
+    url: "https://example.org/e",
+    missing: [],
+  });
+  assert.match(cite, /Wei Chen, Senior Fellow, Brookings/);
 });

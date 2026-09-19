@@ -80,6 +80,60 @@ function authorNames(author: unknown): string[] {
   return [];
 }
 
+/**
+ * What the page says an author IS, not just what they are called.
+ *
+ * schema.org Person carries jobTitle, affiliation and description, and a
+ * surprising number of publishers fill them in. It was all being discarded by
+ * authorNames, which only ever wanted the name — so the qualification a
+ * debater needs was already on the page and already fetched.
+ *
+ * Longer prose bios are trimmed to the first sentence. A cite is read aloud,
+ * and three sentences about someone's book tour is not a qualification.
+ */
+const MAX_QUAL_CHARS = 160;
+
+function authorQuals(author: unknown, into: Record<string, string> = {}): Record<string, string> {
+  if (!author || typeof author !== "object") return into;
+  if (Array.isArray(author)) {
+    author.forEach((a) => authorQuals(a, into));
+    return into;
+  }
+
+  const a = author as {
+    name?: unknown;
+    jobTitle?: unknown;
+    description?: unknown;
+    affiliation?: unknown;
+    worksFor?: unknown;
+  };
+  if (typeof a.name !== "string" || !a.name.trim()) return into;
+
+  const orgOf = (v: unknown): string | undefined => {
+    if (typeof v === "string") return v;
+    if (v && typeof v === "object") {
+      const n = (v as { name?: unknown }).name;
+      if (typeof n === "string") return n;
+    }
+    return undefined;
+  };
+
+  const parts = [
+    typeof a.jobTitle === "string" ? a.jobTitle : undefined,
+    orgOf(a.affiliation) ?? orgOf(a.worksFor),
+  ].filter((x): x is string => Boolean(x && x.trim()));
+
+  let qual = parts.join(", ");
+  if (!qual && typeof a.description === "string" && a.description.trim()) {
+    // First sentence only; a cite is read out loud.
+    qual = a.description.trim().split(/(?<=[.!?])\s/)[0];
+  }
+
+  qual = qual.replace(/\s+/g, " ").trim();
+  if (qual) into[a.name.trim()] = qual.slice(0, MAX_QUAL_CHARS);
+  return into;
+}
+
 function fromJsonLd(html: string): Partial<ArticleMetadata> {
   const blocks = html.matchAll(
     /<script[^>]+type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
@@ -113,8 +167,10 @@ function fromJsonLd(html: string): Partial<ArticleMetadata> {
       const publisher =
         typeof node.publisher === "string" ? node.publisher : node.publisher?.name;
 
+      const quals = authorQuals(node.author);
       return {
         authors: authorNames(node.author),
+        authorQuals: Object.keys(quals).length > 0 ? quals : undefined,
         title: node.headline ?? node.name,
         published: node.datePublished ?? node.dateCreated ?? node.dateModified,
         publisher,
@@ -124,6 +180,54 @@ function fromJsonLd(html: string): Partial<ArticleMetadata> {
   }
 
   return {};
+}
+
+/**
+ * Author bios written into the page rather than into schema.org.
+ *
+ * Structured data turned out to be nearly empty for this: across 40 real
+ * articles only one of the 28 with an author carried anything in JSON-LD, and
+ * that one was the publication's own name, which tells a debater nothing.
+ * Publishers do write bios — they just write them as markup next to the
+ * byline instead of as metadata.
+ */
+const BIO_PATTERNS: RegExp[] = [
+  // <div class="author-bio">…</div> and its many spellings.
+  /<[^>]+class=["'][^"']*(?:author[-_]?bio|byline[-_]?bio|contributor[-_]?bio|author[-_]?description|bio[-_]?text)[^"']*["'][^>]*>([\s\S]{0,600}?)<\//i,
+  /<meta[^>]+name=["'](?:author\.description|citation_author_institution)["'][^>]+content=["']([^"']{4,300})["']/i,
+  /<[^>]+itemprop=["']description["'][^>]*>([\s\S]{0,400}?)<\//i,
+];
+
+/** Strip tags and collapse whitespace. */
+function textOf(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A qualification has to say something the cite does not already.
+ *
+ * "Canada's National Observer" as an author's affiliation is the outlet the
+ * article is already attributed to; printing it after their name reads as a
+ * qualification and is not one.
+ */
+export function usefulQual(qual: string, author: string, container?: string): boolean {
+  const q = qual.trim();
+  if (q.length < 8) return false;
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  if (container && norm(q) === norm(container)) return false;
+  if (norm(q) === norm(author)) return false;
+  return true;
+}
+
+function bioFromHtml(html: string): string | undefined {
+  for (const re of BIO_PATTERNS) {
+    const m = html.match(re);
+    if (!m) continue;
+    const t = textOf(m[1]);
+    if (t.length >= 8) return t.split(/(?<=[.!?])\s/)[0].slice(0, 160);
+  }
+  return undefined;
 }
 
 /**
@@ -210,8 +314,35 @@ export function extractMetadata(html: string, url: string): ArticleMetadata {
   if (!published) missing.push("date");
   if (!title) missing.push("title");
 
+  // Only keep quals for authors that survived deduping, so the map can never
+  // name someone the citation does not.
+  const found: Record<string, string> = Object.fromEntries(
+    Object.entries(ld.authorQuals ?? {}).filter(([name]) =>
+      uniqueAuthors.some((a) => a.toLowerCase() === name.toLowerCase()),
+    ),
+  );
+
+  // A bio in the markup applies to the byline, so it is only safe to attach
+  // when there is exactly one author to attach it to.
+  if (uniqueAuthors.length === 1 && !found[uniqueAuthors[0]]) {
+    const bio = bioFromHtml(html);
+    // Only if the bio actually names them. A block matching one of these
+    // patterns is often the site's own tagline — "Insight and inspiration in
+    // turbulent times" came back as an author qualification — and a real bio
+    // says who the person is, which means saying their name.
+    const surname = uniqueAuthors[0].trim().split(/\s+/).pop() ?? "";
+    if (bio && surname.length > 2 && bio.toLowerCase().includes(surname.toLowerCase())) {
+      found[uniqueAuthors[0]] = bio;
+    }
+  }
+
+  const quals = Object.fromEntries(
+    Object.entries(found).filter(([name, q]) => usefulQual(q, name, container)),
+  );
+
   return {
     authors: uniqueAuthors,
+    authorQuals: Object.keys(quals).length > 0 ? quals : undefined,
     title: title || undefined,
     container,
     publisher: ld.publisher,
