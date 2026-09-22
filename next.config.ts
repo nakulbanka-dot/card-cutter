@@ -40,23 +40,21 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@huggingface/transformers"],
 
   outputFileTracingIncludes: {
-    // The diagnostic route needs the same files as the search route.
-    "/api/model-check": [
+    /*
+     * Every API route, not a list of them.
+     *
+     * ml/ is data, so nothing imports it and tracing cannot find it; the
+     * native runtime is loaded by the .node binding through the dynamic
+     * linker, which no static analysis sees. Both had to be named by hand —
+     * and /api/underline was added after this list was written, so it shipped
+     * without them and every card came back unmarked with "libonnxruntime.so.1:
+     * cannot open shared object file". The route worked, nothing errored, and
+     * the underlining was silently absent.
+     *
+     * A glob covers the next route too.
+     */
+    "/api/**": [
       "./ml/**",
-      "./node_modules/onnxruntime-node/bin/napi-v6/linux/**",
-    ],
-    // ml/ is data, not code, so nothing imports it and tracing cannot find it.
-    // Without this the function deploys without its models and every search
-    // silently falls back to keyword scoring.
-    "/api/find": [
-      "./ml/**",
-      // The native runtime, forced in by hand.
-      //
-      // Tracing follows JavaScript imports, and onnxruntime-node's .node
-      // binding loads libonnxruntime.so.1 through the dynamic linker, which no
-      // static analysis can see. The binding shipped without its shared
-      // library and every model load failed with "cannot open shared object
-      // file" — while the app kept answering normally on keyword scoring.
       "./node_modules/onnxruntime-node/bin/napi-v6/linux/**",
     ],
   },
