@@ -1,4 +1,17 @@
-@import "tailwindcss";
+/*
+ * source("../") restricts class scanning to src/.
+ *
+ * Tailwind v4 detects sources automatically from the project root, skipping
+ * whatever .gitignore excludes. ml/ had to be un-ignored so the models deploy
+ * with the function — which handed Tailwind 68MB of ONNX binaries and
+ * tokeniser JSON to read looking for class names. On Vercel's 2-core builder
+ * the postcss subprocess timed out evaluating this file, and the deploy failed
+ * with an error that named the CSS and said nothing about why.
+ *
+ * It started when ml/ grew from 45MB to 68MB with the third model, and it was
+ * intermittent before that, which is what made it look like flakiness.
+ */
+@import "tailwindcss" source("../");
 
 /*
  * Debate is a text discipline, so the design is typographic: a serif for
