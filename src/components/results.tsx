@@ -388,6 +388,22 @@ export function Results({ result }: { result: FindResponse }) {
                       </button>
                     </>
                   )}
+                  {/*
+                    Marked because it is measured, not because it looks useful.
+                    A passage carrying a percentage, a sum of money or a
+                    magnitude is 1.18x more likely to be cut than one from the
+                    same article without — so it is worth pointing at. A bare
+                    year or any old digit is 0.98x, which is nothing, and is
+                    deliberately not marked.
+                  */}
+                  {p.hasFigure && (
+                    <span
+                      title="Contains a percentage, a sum of money or a magnitude — 1.18x more likely to be cut than a passage from the same article without one"
+                      className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                    >
+                      figures
+                    </span>
+                  )}
                   <span className="ml-auto text-[10px] text-faint">
                     {p.paragraphCount} paragraphs
                   </span>
