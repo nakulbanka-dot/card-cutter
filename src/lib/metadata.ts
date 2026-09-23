@@ -214,10 +214,25 @@ function textOf(html: string): string {
 export function usefulQual(qual: string, author: string, container?: string): boolean {
   const q = qual.trim();
   if (q.length < 8) return false;
-  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
   if (container && norm(q) === norm(container)) return false;
   if (norm(q) === norm(author)) return false;
-  return true;
+
+  // A qualification has to say something the name does not.
+  //
+  // "About Elissa Tennant" reached a live citation. It is the heading above
+  // the bio, not the bio, and the rule that a real bio names the person was
+  // exactly what let it through — the heading names her too. So strip the
+  // heading words and the name, and require something to be left.
+  const stripped = norm(q)
+    .replace(/^(about|by|more (from|by)|posts by|written by|author|meet)\s+/, "")
+    .replace(new RegExp(`\\b${norm(author).split(" ").join("\\s+")}\\b`, "g"), " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Two words of substance beyond the name. "Senior Fellow" clears it;
+  // "About <name>" leaves nothing at all.
+  return stripped.split(" ").filter(Boolean).length >= 2;
 }
 
 function bioFromHtml(html: string): string | undefined {
