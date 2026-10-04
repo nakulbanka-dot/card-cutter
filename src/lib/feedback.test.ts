@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseFeedback, computeStats, type FeedbackRow } from "./feedback.ts";
+import {
+  parseFeedback, computeStats, readStats, clearStatsCache, type FeedbackRow,
+} from "./feedback.ts";
 
 /** What results.tsx sends when someone clicks Cut this. */
 const label = {
@@ -53,4 +55,45 @@ test("stats skip a stored row with no features instead of throwing", () => {
   assert.equal(stats.total, 2);
   assert.equal(stats.cut, 2);
   assert.equal(stats.byRank.length, 1);
+});
+
+/** A stand-in for the store that counts how often it was read. */
+function counting(rows: FeedbackRow[]) {
+  let reads = 0;
+  return { read: async () => { reads++; return rows; }, reads: () => reads };
+}
+
+const ROW = { ...label, ts: "2026-10-01T00:00:00Z" } as FeedbackRow;
+
+test("stats are read once a minute, not once a request", async () => {
+  clearStatsCache();
+  const store = counting([ROW]);
+  const t = 1_000_000;
+  for (let i = 0; i < 5; i++) await readStats(t + i * 1_000, store.read);
+  assert.equal(store.reads(), 1);
+  assert.equal((await readStats(t + 61_000, store.read)).total, 1);
+  assert.equal(store.reads(), 2);
+});
+
+test("requests that arrive together share one read", async () => {
+  clearStatsCache();
+  const store = counting([ROW]);
+  await Promise.all([1, 2, 3].map(() => readStats(5_000_000, store.read)));
+  assert.equal(store.reads(), 1);
+});
+
+test("a failed read is not served for the next minute", async () => {
+  clearStatsCache();
+  await assert.rejects(readStats(9_000_000, async () => { throw new Error("down"); }));
+  const store = counting([ROW]);
+  assert.equal((await readStats(9_001_000, store.read)).total, 1);
+});
+
+test("clearing the cache makes the next request read again", async () => {
+  clearStatsCache();
+  const store = counting([ROW]);
+  await readStats(7_000_000, store.read);
+  clearStatsCache();
+  await readStats(7_001_000, store.read);
+  assert.equal(store.reads(), 2);
 });
