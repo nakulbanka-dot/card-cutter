@@ -101,7 +101,10 @@ export function collectionEnabled(): boolean {
 }
 
 export async function logFeedback(row: FeedbackRow): Promise<boolean> {
-  return appendFeedback(row);
+  const stored = await appendFeedback(row);
+  // So the stats this instance serves include the label just recorded.
+  if (stored) clearStatsCache();
+  return stored;
 }
 
 /** Read the whole log. Small enough to hold in memory for a long time. */
@@ -122,6 +125,44 @@ export interface Stats {
   byRank: { rank: number; shown: number; cut: number; rate: number }[];
   /** Domains ranked by how often their passages get cut. */
   domains: { domain: string; shown: number; cut: number; rate: number }[];
+}
+
+/**
+ * How long one instance reuses the stats it computed.
+ *
+ * GET /api/feedback is public and reads the whole log on every request — the
+ * entire Redis list, parsed row by row. Nothing in the app calls it; it is
+ * there for checking on collection by hand, which never needs a figure
+ * fresher than a minute. Without this, anyone refreshing it in a loop makes
+ * every request a full read of the training set.
+ */
+const STATS_TTL_MS = 60_000;
+
+let statsCache: { at: number; value: Promise<Stats> } | null = null;
+
+/**
+ * The stats, computed at most once a minute per instance.
+ *
+ * The promise is cached rather than the result, so a burst of requests that
+ * arrives before the first read finishes shares that one read.
+ */
+export function readStats(
+  now: number = Date.now(),
+  read: () => Promise<FeedbackRow[]> = readFeedback,
+): Promise<Stats> {
+  if (statsCache && now - statsCache.at < STATS_TTL_MS) return statsCache.value;
+  const value = read().then(computeStats);
+  statsCache = { at: now, value };
+  // A failed read must not be served for the next minute.
+  value.catch(() => {
+    if (statsCache?.value === value) statsCache = null;
+  });
+  return value;
+}
+
+/** Drop the cached stats. Also the test seam. */
+export function clearStatsCache(): void {
+  statsCache = null;
 }
 
 export function computeStats(rows: FeedbackRow[]): Stats {
