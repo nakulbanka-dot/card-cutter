@@ -17,8 +17,7 @@
  * sends each model the parameters it accepts.
  *
  * NOTE: reading passages does not run on Claude and costs no tokens. That is
- * an NLI cross-encoder (see ranking/stance.ts), free either locally or on
- * Hugging Face's free tier.
+ * the trained reranker (see ranking/reranker.ts), which runs in-process.
  */
 export const CUTTING_MODEL = "claude-haiku-4-5" as const;
 

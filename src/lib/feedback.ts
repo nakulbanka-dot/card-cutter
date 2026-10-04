@@ -1,4 +1,5 @@
-import { appendFeedback, readAllFeedback, activeBackend } from "./feedback-store";
+import { z } from "zod";
+import { appendFeedback, readAllFeedback, activeBackend } from "./feedback-store.ts";
 
 /**
  * The training set.
@@ -54,6 +55,46 @@ export interface FeedbackRow {
   features: PassageFeatures;
 }
 
+/**
+ * What a label may contain, and how much of it.
+ *
+ * The route used to store any JSON with a url and an action, whole. Two
+ * problems with that. A script could send 200 rows an hour of any size and
+ * fill a RAM-only Redis plan, after which real testers' labels stop saving.
+ * And a single row without `features` broke the public stats for good,
+ * because computeStats reads every row's features.
+ *
+ * The caps are far above anything the app sends — a passage is at most a few
+ * paragraphs — so they only ever refuse something that was not a label.
+ * Unknown keys are dropped rather than stored.
+ */
+const num = z.number().nullable();
+const FeedbackInput = z.object({
+  query: z.string().max(1_000),
+  terms: z.array(z.string().max(100)).max(100),
+  url: z.string().min(1).max(2_048),
+  passageText: z.string().max(20_000),
+  action: z.enum(["cut", "reject", "shown"]),
+  features: z.object({
+    termCoverage: num,
+    termHits: num,
+    shownRank: num,
+    sourceRank: num,
+    charCount: num,
+    hasQuantity: z.boolean(),
+    hasQuote: z.boolean(),
+    heuristicScore: num,
+    domain: z.string().max(255),
+    hasAuthor: z.boolean(),
+  }),
+});
+
+/** A label as the client sent it, checked; null if it is not one. */
+export function parseFeedback(input: unknown): Omit<FeedbackRow, "ts"> | null {
+  const parsed = FeedbackInput.safeParse(input);
+  return parsed.success ? (parsed.data as Omit<FeedbackRow, "ts">) : null;
+}
+
 /** True when rows are actually being stored somewhere durable. */
 export function collectionEnabled(): boolean {
   return activeBackend() !== "none";
@@ -92,6 +133,9 @@ export function computeStats(rows: FeedbackRow[]): Stats {
   const domainBuckets = new Map<string, { shown: number; cut: number }>();
 
   for (const row of rows) {
+    // Rows stored before labels were validated may have no features. One of
+    // those must not take the stats down for everyone.
+    if (!row?.features) continue;
     const rank = row.features.shownRank;
     const rb = rankBuckets.get(rank) ?? { shown: 0, cut: 0 };
     rb.shown++;

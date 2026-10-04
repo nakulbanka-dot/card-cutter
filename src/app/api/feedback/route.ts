@@ -1,5 +1,5 @@
 import {
-  logFeedback, readFeedback, computeStats, activeBackend, type FeedbackRow,
+  logFeedback, readFeedback, computeStats, activeBackend, parseFeedback,
 } from "@/lib/feedback";
 import { checkPerHour, visitorFrom } from "@/lib/rate-limit";
 
@@ -17,9 +17,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const row = (await request.json()) as FeedbackRow;
-    if (!row?.url || !row?.action) {
-      return Response.json({ error: "url and action are required" }, { status: 400 });
+    const row = parseFeedback(await request.json());
+    if (!row) {
+      return Response.json({ error: "not a valid label" }, { status: 400 });
     }
     const stored = await logFeedback({ ...row, ts: new Date().toISOString() });
     // `stored: false` means collection is off for this deployment, not that

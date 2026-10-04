@@ -1,4 +1,5 @@
 import type { ArticleMetadata } from "./citation";
+import { readCapped } from "./read-capped.ts";
 
 /**
  * Pull author/date/publication out of a page's own markup.
@@ -382,7 +383,7 @@ export async function fetchMetadata(url: string): Promise<ArticleMetadata> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     // Only the <head> matters, and articles can be megabytes.
-    const html = (await res.text()).slice(0, 200_000);
+    const html = await readCapped(res, 200_000);
     return extractMetadata(html, url);
   } catch {
     return {
