@@ -1,7 +1,8 @@
 # How this works
 
-All five stages are built, in `src/lib/pipeline/`. This is how they fit
-together and what's still open. Not yet run against the live APIs.
+All five stages are built, in `src/lib/pipeline/`, and the app is live. This
+is how they fit together and what's still open. Parts of it are a log written
+as the work happened; where the app has since moved on, a note says so.
 
 ## The input
 
@@ -220,12 +221,17 @@ perfectly while using none of your words never reaches the model, because
 keywords never surface it. Fixing that needs semantic retrieval over the whole
 article rather than term matching, which is the next honest step.
 
+*Since done:* the trained retriever now shortlists by meaning, and the trained
+reranker replaced the NLI model as the reader. See
+[model-results.md](model-results.md).
+
 ## What each part costs
 
-Reading costs **no Claude tokens**. It is an NLI cross-encoder
-(`Xenova/nli-deberta-v3-xsmall`), which runs either locally or on Hugging
-Face's free tier. The bill for it is time, not money: ~200ms a paragraph, so
-about 8 seconds across a 40-paragraph query, which is most of the wait.
+Reading costs **no Claude tokens**. It is the trained reranker in
+`ml/reranker`, which runs inside the app — locally or in the serverless
+function, with no hosted service. The bill for it is time, not money. (This
+used to be an NLI cross-encoder, `Xenova/nli-deberta-v3-xsmall`, run on
+Hugging Face's free tier in deployment.)
 
 Claude tokens are spent in exactly one place — the paid `/api/cut` path, in
 expand, cut and underline. That path defaults to Haiku: about $0.013 a card
