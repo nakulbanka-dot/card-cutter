@@ -1,15 +1,15 @@
 import { findEvidence } from "@/lib/pipeline/free";
-import { defaultSourceLimit } from "@/lib/env";
+import { requestedSourceLimit } from "@/lib/env";
 import { TavilyKeylessLimitError } from "@tavily/core";
 import { checkAndCount, visitorFrom } from "@/lib/rate-limit";
 
 /**
  * POST /api/find — search, extract, read and rank.
  *
- * Hosted stance scoring is ~4.4s a call against ~200ms locally, and the first
- * request after an idle period pays a ~23s model cold start on top. Measured
- * end to end at 28s. Vercel's default serverless ceiling would cut that off
- * mid-request, so the limit is raised explicitly.
+ * A search reads every source and runs the trained models over each one, and
+ * the first request on a fresh instance loads those models from disk too.
+ * Vercel's default serverless ceiling would cut that off mid-request, so the
+ * limit is raised explicitly.
  */
 export const maxDuration = 60;
 export async function POST(request: Request) {
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "query is required" }, { status: 400 });
   }
 
-  const limit = Math.min(Math.max(body.limit ?? defaultSourceLimit(), 1), 20);
+  const limit = requestedSourceLimit(body.limit);
 
   // Checked before any search runs, so a refused request spends no credits.
   const gate = checkAndCount(visitorFrom(request.headers));

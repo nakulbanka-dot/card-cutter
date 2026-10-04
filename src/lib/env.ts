@@ -57,3 +57,16 @@ export function defaultSourceLimit(): number {
   const n = raw ? Number.parseInt(raw, 10) : Number.NaN;
   return Number.isFinite(n) && n > 0 ? Math.min(n, 20) : DEFAULT_SOURCE_LIMIT;
 }
+
+/**
+ * The source count a request asked for, as a whole number from 1 to 20.
+ *
+ * Clamping alone let anything that is not a number through as NaN, and NaN
+ * fails every comparison — including the one that stops collecting search
+ * hits at the limit, so a bad value read more articles than any good one.
+ */
+export function requestedSourceLimit(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (raw == null || !Number.isFinite(n)) return defaultSourceLimit();
+  return Math.min(Math.max(Math.floor(n), 1), 20);
+}
