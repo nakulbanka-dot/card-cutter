@@ -54,6 +54,11 @@ In product terms, of the top passage shown:
 | keyword | 42.8% | 85.9% |
 | trained | **32.6%** | **89.8%** |
 
+The NLI stance rows were measured by `scripts/eval-stance.mjs` against
+`src/lib/ranking/stance.ts`. Both were removed once the reranker replaced that
+model; to rerun the baseline, check out commit `1f8f8a4`, the last one that
+has them.
+
 ## Underlining
 
     val AUC 0.7479   accuracy 0.7022   (always-"no" scores 0.6266)
