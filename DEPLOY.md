@@ -35,8 +35,9 @@ ranking on keywords alone and cutting cards without underlining — worse, but
 it does not break. [docs/model-results.md](docs/model-results.md) has why the
 flag exists and what the models score.
 
-`HUGGINGFACE_API_KEY` is no longer needed. It was for the hosted copy of the
-old stance model, which the trained models replaced.
+`HUGGINGFACE_API_KEY` is no longer read by anything. It was for the hosted
+copy of the old stance model, which the trained models replaced, so it can be
+deleted from the project's environment variables.
 
 ### 2. Deploy
 
