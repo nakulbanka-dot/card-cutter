@@ -33,6 +33,28 @@ That free tier is a **hard stop**: it refuses requests rather than billing you.
 You are only charged if you deliberately upgrade to Pay As You Go. See
 `.env.example`.
 
+### Training data, and working from a new machine
+
+Git carries the code and the trained models in `ml/`, never the data they were
+trained on: `data/`, `models/` and `.venv-train/` are all left out on purpose.
+
+- **Your own data** (`data/training/`, `data/cards.jsonl`) goes in a separate
+  private repo, `card-cutter-data`. Clone it into `data/` on any machine.
+- **The openCaselist corpus** (~10 GB) is public, so it is downloaded rather
+  than stored: `python3 scripts/fetch-opencaselist.py`.
+- **The training environment** is `requirements-train.txt`:
+
+  ```bash
+  python3 -m venv .venv-train
+  .venv-train/bin/pip install -r requirements-train.txt
+  ```
+
+In Claude Code on the web, `.claude/hooks/session-start.sh` does the first two
+at the start of every session: it installs the Node packages, clones
+`card-cutter-data` into `data/` if the session can reach it, and downloads the
+corpus in the background when `CARD_CUTTER_FETCH_CORPUS=1` is set and
+`huggingface.co` is allowed.
+
 ## The two modes
 
 | | Cost | What it does |
