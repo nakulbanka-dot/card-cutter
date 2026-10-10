@@ -12,8 +12,9 @@ up for and nothing to pay.
 
 ## Live
 
-Not deployed yet. [DEPLOY.md](DEPLOY.md) has the steps — note that GitHub
-Pages cannot host this, and why.
+https://card-cutter-gules.vercel.app — deployed on Vercel, redeploys on every
+push to `main`. [DEPLOY.md](DEPLOY.md) has the setup, and why GitHub Pages
+cannot host this.
 
 ## Setup
 
@@ -22,7 +23,9 @@ npm install
 npm run dev
 ```
 
-That's it. No `.env.local` needed to start.
+That's it. No `.env.local` needed to start. Without it, passages are ranked
+by keyword. Set `USE_TRAINED_MODELS=1` to rank them with the trained models
+in `ml/` instead — see [docs/model-results.md](docs/model-results.md).
 
 Hitting the keyless caps? A [free Tavily key](https://app.tavily.com/home)
 (no credit card) raises it to 1,000 credits a month — roughly 100+ queries.
@@ -62,15 +65,22 @@ you're reading the output, which is the trade you accept for it costing nothing.
 
 | Path | What's there |
 | --- | --- |
-| `src/app/page.tsx` | Search box and results |
+| `src/app/page.tsx` | Homepage |
+| `src/app/cut/page.tsx` | Search box and results |
 | `src/app/api/find/route.ts` | Free mode |
 | `src/app/api/cut/route.ts` | Paid mode |
+| `src/app/api/underline/route.ts` | Underlines a passage when you cut it |
+| `src/app/api/feedback/route.ts` | Cut / Not useful clicks, and the export |
+| `src/app/api/model-check/route.ts` | Can the trained models load here? |
 | `src/lib/terms.ts` | Query parsing, no LLM |
 | `src/lib/passages.ts` | Paragraph ranking and highlighting |
 | `src/lib/verbatim.ts` | The fabrication guard |
 | `src/lib/export-markdown.ts` | The "Copy for Claude" payload |
 | `src/lib/pipeline/free.ts` | Free pipeline |
 | `src/lib/pipeline/` | Paid stages: expand, search, extract, cut, underline |
+| `src/lib/ranking/` | The trained models: retriever, reranker, highlighter |
+| `ml/` | Their int8 ONNX exports, which ship with the app |
+| `scripts/` | Corpus import, training and evaluation |
 | `docs/ARCHITECTURE.md` | How it fits together, and what's open |
 
 ## Scripts
@@ -80,10 +90,11 @@ npm run dev        # dev server (Turbopack)
 npm run build      # production build
 npm run typecheck  # tsc, no emit
 npm run lint       # eslint
-npm test           # node:test — 25 tests, no API keys needed
+npm test           # node:test — no API keys needed
 ```
 
 ## Stack
 
 Next.js 16 (App Router, Turbopack) · TypeScript · Tailwind v4 ·
-`@tavily/core` · `@anthropic-ai/sdk` (paid mode only) · zod
+`@tavily/core` · `@huggingface/transformers` + ONNX Runtime (the trained
+models) · `@anthropic-ai/sdk` (paid mode only) · zod

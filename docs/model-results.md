@@ -6,16 +6,16 @@ reporting 0% contamination. Chance is 0.3663.
 
 ## The three models
 
-| | Job | Size (int8) |
-|---|---|---|
-| `models/retriever` | Which paragraphs does the reranker get to see | 22.9 MB |
-| `models/cutter2` | Does this paragraph prove the tag | 23.0 MB |
-| `models/highlighter` | Which sentences would a debater underline | not yet exported |
+| | Job | Ships as | Size (int8) | Runs in |
+|---|---|---|---|---|
+| `models/retriever` | Which paragraphs does the reranker get to see | `ml/retriever` | 22.9 MB | `/api/find` |
+| `models/cutter2` | Does this paragraph prove the tag | `ml/reranker` | 23.0 MB | `/api/find` |
+| `models/highlighter` | Which sentences would a debater underline | `ml/highlighter` | 23.0 MB | `/api/underline` |
 
-Both shipped models fit inside a serverless function, which is the point: the
-deployed app currently calls a hosted API because the old stance runtime was
-~600MB, and that call is why production showed testers 8 passages where a
-local run showed 24.
+All three fit inside a serverless function, which is the point. They replaced
+the NLI stance model, whose ~600MB runtime did not fit, so production had to
+call a hosted copy over the network — and that call is why production showed
+testers 8 passages where a local run showed 24.
 
 ## Retrieval — finding the passage
 
@@ -41,7 +41,7 @@ the page.
 
 | | AUC/article | P@1 | R@4 | MRR |
 |---|---|---|---|---|
-| NLI stance (what is deployed today) | 0.5792 | 0.4922 | 0.8264 | 0.6443 |
+| NLI stance (deployed before this) | 0.5792 | 0.4922 | 0.8264 | 0.6443 |
 | keyword (the app's own ranking) | 0.6459 | 0.5718 | 0.8591 | 0.7069 |
 | trained reranker, fp32 | 0.7223 | 0.6657 | 0.8950 | 0.7711 |
 | trained reranker, int8 (deployed) | **0.7247** | **0.6740** | **0.8978** | **0.7773** |
@@ -50,9 +50,14 @@ In product terms, of the top passage shown:
 
 | | wrong top pick | usable card in the four shown |
 |---|---|---|
-| deployed today | 55.3% | 82.6% |
+| NLI stance | 55.3% | 82.6% |
 | keyword | 42.8% | 85.9% |
 | trained | **32.6%** | **89.8%** |
+
+The NLI stance rows were measured by `scripts/eval-stance.mjs` against
+`src/lib/ranking/stance.ts`. Both were removed once the reranker replaced that
+model; to rerun the baseline, check out commit `1f8f8a4`, the last one that
+has them.
 
 ## Underlining
 
@@ -102,8 +107,9 @@ collapsing.
 
 ## Running them in production
 
-Both models are behind `USE_TRAINED_MODELS=1`. Without it the app runs the
-keyword path, which is worse and works.
+All three are behind `USE_TRAINED_MODELS=1`. Without it the app runs the
+keyword path, which is worse and works, and cards cut in free mode come back
+without underlining.
 
 The gate exists because the first deploy with both models loaded did not throw
 — the function died, so the route's error handling never ran and every search
@@ -116,8 +122,10 @@ nothing loaded is 84MB.
 
 ## Not done
 
-- Nothing is wired into the app yet beyond `src/lib/ranking/retriever.ts`.
-- The highlighter has no ONNX export.
+- The highlighter is not measured on the 362 held-out pairs like the other
+  two. Its numbers come from its own validation split, and the int8 file that
+  ships has no score written down here — `scripts/eval-highlighter.py --onnx`
+  measures it.
 - The tag-jargon filter helps search queries in principle and that is
   unmeasured; it needs a live comparison once testers are running.
 - Retrieval is still limited by which URLs the search engine returns. The

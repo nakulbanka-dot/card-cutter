@@ -1,5 +1,6 @@
 import { extractMetadata } from "./metadata";
 import { extractParagraphs } from "./html-text";
+import { readCapped } from "./read-capped";
 import type { ArticleMetadata } from "./citation";
 
 /**
@@ -49,7 +50,7 @@ export async function fetchPage(url: string): Promise<FetchedPage> {
       return { url, body: "", metadata: emptyMetadata(url), usable: false };
     }
     // Articles can be megabytes of markup; the text is well inside this.
-    html = (await res.text()).slice(0, 800_000);
+    html = await readCapped(res, 800_000);
   } catch {
     return { url, body: "", metadata: emptyMetadata(url), usable: false };
   }

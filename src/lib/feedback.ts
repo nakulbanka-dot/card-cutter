@@ -1,4 +1,5 @@
-import { appendFeedback, readAllFeedback, activeBackend } from "./feedback-store";
+import { z } from "zod";
+import { appendFeedback, readAllFeedback, activeBackend } from "./feedback-store.ts";
 
 /**
  * The training set.
@@ -54,13 +55,56 @@ export interface FeedbackRow {
   features: PassageFeatures;
 }
 
+/**
+ * What a label may contain, and how much of it.
+ *
+ * The route used to store any JSON with a url and an action, whole. Two
+ * problems with that. A script could send 200 rows an hour of any size and
+ * fill a RAM-only Redis plan, after which real testers' labels stop saving.
+ * And a single row without `features` broke the public stats for good,
+ * because computeStats reads every row's features.
+ *
+ * The caps are far above anything the app sends — a passage is at most a few
+ * paragraphs — so they only ever refuse something that was not a label.
+ * Unknown keys are dropped rather than stored.
+ */
+const num = z.number().nullable();
+const FeedbackInput = z.object({
+  query: z.string().max(1_000),
+  terms: z.array(z.string().max(100)).max(100),
+  url: z.string().min(1).max(2_048),
+  passageText: z.string().max(20_000),
+  action: z.enum(["cut", "reject", "shown"]),
+  features: z.object({
+    termCoverage: num,
+    termHits: num,
+    shownRank: num,
+    sourceRank: num,
+    charCount: num,
+    hasQuantity: z.boolean(),
+    hasQuote: z.boolean(),
+    heuristicScore: num,
+    domain: z.string().max(255),
+    hasAuthor: z.boolean(),
+  }),
+});
+
+/** A label as the client sent it, checked; null if it is not one. */
+export function parseFeedback(input: unknown): Omit<FeedbackRow, "ts"> | null {
+  const parsed = FeedbackInput.safeParse(input);
+  return parsed.success ? (parsed.data as Omit<FeedbackRow, "ts">) : null;
+}
+
 /** True when rows are actually being stored somewhere durable. */
 export function collectionEnabled(): boolean {
   return activeBackend() !== "none";
 }
 
 export async function logFeedback(row: FeedbackRow): Promise<boolean> {
-  return appendFeedback(row);
+  const stored = await appendFeedback(row);
+  // So the stats this instance serves include the label just recorded.
+  if (stored) clearStatsCache();
+  return stored;
 }
 
 /** Read the whole log. Small enough to hold in memory for a long time. */
@@ -83,6 +127,44 @@ export interface Stats {
   domains: { domain: string; shown: number; cut: number; rate: number }[];
 }
 
+/**
+ * How long one instance reuses the stats it computed.
+ *
+ * GET /api/feedback is public and reads the whole log on every request — the
+ * entire Redis list, parsed row by row. Nothing in the app calls it; it is
+ * there for checking on collection by hand, which never needs a figure
+ * fresher than a minute. Without this, anyone refreshing it in a loop makes
+ * every request a full read of the training set.
+ */
+const STATS_TTL_MS = 60_000;
+
+let statsCache: { at: number; value: Promise<Stats> } | null = null;
+
+/**
+ * The stats, computed at most once a minute per instance.
+ *
+ * The promise is cached rather than the result, so a burst of requests that
+ * arrives before the first read finishes shares that one read.
+ */
+export function readStats(
+  now: number = Date.now(),
+  read: () => Promise<FeedbackRow[]> = readFeedback,
+): Promise<Stats> {
+  if (statsCache && now - statsCache.at < STATS_TTL_MS) return statsCache.value;
+  const value = read().then(computeStats);
+  statsCache = { at: now, value };
+  // A failed read must not be served for the next minute.
+  value.catch(() => {
+    if (statsCache?.value === value) statsCache = null;
+  });
+  return value;
+}
+
+/** Drop the cached stats. Also the test seam. */
+export function clearStatsCache(): void {
+  statsCache = null;
+}
+
 export function computeStats(rows: FeedbackRow[]): Stats {
   const cut = rows.filter((r) => r.action === "cut").length;
   const rejected = rows.filter((r) => r.action === "reject").length;
@@ -92,6 +174,9 @@ export function computeStats(rows: FeedbackRow[]): Stats {
   const domainBuckets = new Map<string, { shown: number; cut: number }>();
 
   for (const row of rows) {
+    // Rows stored before labels were validated may have no features. One of
+    // those must not take the stats down for everyone.
+    if (!row?.features) continue;
     const rank = row.features.shownRank;
     const rb = rankBuckets.get(rank) ?? { shown: 0, cut: 0 };
     rb.shown++;

@@ -1,6 +1,7 @@
 import {
-  logFeedback, readFeedback, computeStats, activeBackend, type FeedbackRow,
+  logFeedback, readFeedback, readStats, activeBackend, parseFeedback,
 } from "@/lib/feedback";
+import { secretMatches } from "@/lib/secret";
 import { checkPerHour, visitorFrom } from "@/lib/rate-limit";
 
 /** POST — record one label. GET — training-set stats. */
@@ -17,9 +18,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const row = (await request.json()) as FeedbackRow;
-    if (!row?.url || !row?.action) {
-      return Response.json({ error: "url and action are required" }, { status: 400 });
+    const row = parseFeedback(await request.json());
+    if (!row) {
+      return Response.json({ error: "not a valid label" }, { status: 400 });
     }
     const stored = await logFeedback({ ...row, ts: new Date().toISOString() });
     // `stored: false` means collection is off for this deployment, not that
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
         { status: 501 },
       );
     }
-    if (supplied !== expected) {
+    if (!secretMatches(supplied, expected)) {
       return Response.json({ error: "Not authorised." }, { status: 401 });
     }
 
@@ -67,9 +68,8 @@ export async function GET(request: Request) {
     });
   }
 
-  const rows = await readFeedback();
   return Response.json({
-    ...computeStats(rows),
+    ...(await readStats()),
     // So it is visible at a glance whether anything is actually being kept.
     storage: activeBackend(),
   });

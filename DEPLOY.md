@@ -16,56 +16,61 @@ builds straight from this repository on push.
 Built by the Next.js team, free tier, connects to the GitHub repo directly.
 You get `card-cutter.vercel.app`, or a custom domain later.
 
-### 1. Get the two keys
+### 1. Get the key, and set the model flag
 
-| Key | Where | Cost |
+| Variable | Where | Cost |
 | --- | --- | --- |
 | `TAVILY_API_KEY` | https://app.tavily.com/home | Free, 1,000 credits/month, no card |
-| `HUGGINGFACE_API_KEY` | https://huggingface.co/settings/tokens | Free, read token is enough |
+| `USE_TRAINED_MODELS` | Set it to `1` | Free |
 
 The Tavily key stops being optional the moment other people use the site.
 Keyless mode has an hourly cap shared by every visitor, so it would be
 exhausted by a handful of searches.
 
-The Hugging Face key is what makes stance ranking work in deployment. The
-local model is ~600MB installed, which is past every serverless limit, so the
-deployed copy calls the hosted copy of the same model instead. Without the
-key the app still runs, ranking on keywords alone — worse, but it does not
-break.
+`USE_TRAINED_MODELS=1` turns on the three trained models in `ml/` — the
+retriever and reranker that rank passages in `/api/find`, and the highlighter
+that underlines a card in `/api/underline`. They run inside the function, so
+there is no second service and no key. Without the flag the app still runs,
+ranking on keywords alone and cutting cards without underlining — worse, but
+it does not break. [docs/model-results.md](docs/model-results.md) has why the
+flag exists and what the models score.
+
+`HUGGINGFACE_API_KEY` is no longer read by anything. It was for the hosted
+copy of the old stance model, which the trained models replaced, so it can be
+deleted from the project's environment variables.
 
 ### 2. Deploy
 
 1. Go to https://vercel.com/new and sign in with GitHub.
 2. Import `nakulbanka-dot/card-cutter`. The framework is detected; change nothing.
-3. Under **Environment Variables**, add both keys from the table above.
+3. Under **Environment Variables**, add both variables from the table above.
 4. Deploy. First build takes a few minutes.
 
 Every push to `main` redeploys from then on.
 
 ### What deployment costs in speed
 
-Hosted stance scoring is much slower than local, and it is worth knowing
-before you see it:
-
-| | Local | Hosted |
-| --- | --- | --- |
-| One passage read | ~200ms | ~4.4s |
-| First read after idle | — | ~23s cold start |
-| Whole query | ~11s | ~28s |
-
-The shortlist shrinks from five candidates a source to two when running
-hosted, which keeps it inside the function timeout while still letting the
-model choose rather than rubber-stamp the keyword favourite. `maxDuration` on
-the route is raised to 60s so Vercel does not cut a slow query off.
-
-If that is too slow, a container host runs the local model at full speed —
-see the last section.
+The models load from disk on the first request a function instance serves,
+which makes that search slower than the ones after it. `maxDuration` on
+`/api/find`, `/api/underline` and `/api/model-check` is raised to 60s so Vercel
+does not cut a slow query off.
 
 ### 3. Check it
 
-Open the deployment and run one search. If results come back with a **Match**
-percentage that has an "Argues your side" row in its breakdown, both keys are
-working. If that row is missing, the Hugging Face key is not set.
+Open `/api/model-check` on the deployment. It loads the retriever and the
+reranker on their own route and reports each one, so a model that cannot load
+does not take search down to tell you:
+
+```json
+{ "flag": "on", "retriever": { "ok": true, … }, "reranker": { "ok": true, … } }
+```
+
+`"flag": "off"` means `USE_TRAINED_MODELS` is not set to `1`. An `"ok": false`
+carries the reason the model did not load.
+
+Then run one search. Results should come back with a **Match** percentage
+that has an "Argues your side" row in its breakdown — that row is the
+reranker's score, so it is missing whenever the reranker did not run.
 
 ## Collecting feedback from real users
 
@@ -116,15 +121,21 @@ That is the same JSONL the training scripts read.
 
 **1,000 Tavily credits a month, shared by everyone who visits.** One search
 spends about four, so the whole site supports roughly **250 searches a
-month** — eight a day. Without a limit, one person with a script exhausts the
-month before lunch and everyone else gets errors for three weeks.
+month**. Without a limit, one person with a script exhausts the month before
+lunch and everyone else gets errors for three weeks.
 
-Two ceilings ship on by default:
+Three ceilings ship on by default:
 
 | Setting | Default | Stops |
 | --- | --- | --- |
-| `SEARCH_LIMIT_PER_VISITOR` | 5 / day | One visitor monopolising the day |
-| `SEARCH_LIMIT_GLOBAL` | 8 / day | A crowd doing it collectively |
+| `SEARCH_LIMIT_PER_VISITOR` | 15 / day | One visitor monopolising the day |
+| `SEARCH_LIMIT_GLOBAL` | 150 / day | A crowd doing it collectively |
+| `SEARCH_LIMIT_MONTHLY` | 220 / month | The site spending past the free tier |
+
+The monthly cap is the real budget, set just under the free tier's 250. The
+daily one is loose on purpose: a beta fails on the first afternoon, when
+everyone opens the link at once, not at the end of the month. In development
+all three are much higher, so building the app does not lock you out.
 
 Both are env vars, so raise them in Vercel when you move off the free tier.
 The remaining count shows above the results, and a refused search spends no
@@ -142,16 +153,6 @@ Tavily Pay As You Go is $0.008 a credit, so about **four cents a search**.
 A squad of twelve doing ten searches a day each is roughly $150 a month. That
 number is why the pricing model has a bring-your-own-source tier.
 
-## If you want the local model in production
-
-Serverless will not hold it. A container host will: Render, Railway and
-Fly.io all run this unchanged with `npm run build && npm start`. Give the
-instance at least 2GB of memory, leave `HUGGINGFACE_API_KEY` unset, and the
-app uses the local model with no per-request network hop.
-
-Render's free tier sleeps after inactivity, so the first request after a
-quiet spell takes about a minute.
-
 ## Running it yourself
 
 ```bash
@@ -159,5 +160,6 @@ npm install
 npm run dev
 ```
 
-No keys needed locally — search falls back to keyless mode and the stance
-model downloads on first use.
+No keys needed locally — search falls back to keyless mode. Add
+`USE_TRAINED_MODELS=1` to `.env.local` to rank with the trained models, which
+are already in `ml/` and need no download.

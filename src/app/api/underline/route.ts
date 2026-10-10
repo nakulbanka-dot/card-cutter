@@ -34,9 +34,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const claim = body.claim?.trim();
-  const passage = body.passage?.trim();
-  if (!claim || !passage) {
+  const claim = typeof body.claim === "string" ? body.claim.trim() : "";
+  // Not trimmed. The sentence offsets that come back index into this string,
+  // and the client applies them to the passage it sent — trimming here would
+  // shift every underline by however much whitespace led the passage.
+  const passage = typeof body.passage === "string" ? body.passage : "";
+  if (!claim || !passage.trim()) {
     return Response.json({ error: "claim and passage are required" }, { status: 400 });
   }
 
