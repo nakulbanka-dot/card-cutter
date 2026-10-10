@@ -55,7 +55,16 @@ const nextConfig: NextConfig = {
      */
     "/api/**": [
       "./ml/**",
-      "./node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+      // The whole package, not just its binaries.
+      //
+      // This listed only bin/napi-v6/linux/** and relied on Next's tracer to
+      // find the package's own JavaScript through @huggingface/transformers.
+      // That package is marked external and requires onnxruntime-node
+      // dynamically, so nothing static points at it. It worked for a while and
+      // then stopped — the function shipped the native libraries with no
+      // module to load them, and every search quietly fell back to keyword
+      // scoring while answering 200.
+      "./node_modules/onnxruntime-node/**",
     ],
   },
 
