@@ -110,6 +110,7 @@ you're reading the output, which is the trade you accept for it costing nothing.
 ```bash
 npm run dev        # dev server (Turbopack)
 npm run build      # production build
+npm run check:bundle  # after build: the deployed functions can run the models
 npm run typecheck  # tsc, no emit
 npm run lint       # eslint
 npm test           # node:test — no API keys needed

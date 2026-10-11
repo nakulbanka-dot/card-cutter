@@ -55,41 +55,47 @@ const nextConfig: NextConfig = {
      */
     "/api/**": [
       "./ml/**",
-      // The whole package, not just its binaries.
+      // The runtime, named file by file rather than package by package.
       //
-      // This listed only bin/napi-v6/linux/** and relied on Next's tracer to
-      // find the package's own JavaScript through @huggingface/transformers.
-      // That package is marked external and requires onnxruntime-node
-      // dynamically, so nothing static points at it. It worked for a while and
-      // then stopped — the function shipped the native libraries with no
-      // module to load them, and every search quietly fell back to keyword
-      // scoring while answering 200.
-      "./node_modules/onnxruntime-node/**",
-      // And everything the runtime itself depends on.
+      // onnxruntime-node is required dynamically by @huggingface/transformers,
+      // so the tracer cannot see it and these lines are all that ship it. They
+      // have been wrong twice: listing only the Linux binaries shipped them
+      // with no module to load them ("Cannot find module 'onnxruntime-node'"),
+      // and the next fix shipped the module without onnxruntime-common. Every
+      // search answered 200 on keyword ranking while the tests passed.
       //
-      // Naming onnxruntime-node fixed "Cannot find module
-      // 'onnxruntime-node'" and revealed the next missing piece:
-      // @huggingface/transformers/node_modules/onnxruntime-common. Listing
-      // packages one at a time is how this keeps breaking — each fix ships
-      // the thing that was named and nothing it reaches for. The whole
-      // subtree is the dependency, so the whole subtree is named.
+      // Naming whole packages fixed that and carried everything else in them:
+      // the Mac and Windows builds of the runtime, 395 MB a function, plus a
+      // second, unused copy of the package. Excludes do not help — they do not
+      // remove files an include names, which was measured, not assumed. So the
+      // includes say exactly what a Linux function loads: the package's
+      // JavaScript and, for each Linux CPU type, the runtime library and the
+      // binding that opens it. Both CPU types are kept; 70 MB is cheaper than
+      // guessing wrong about where the function runs.
       //
-      // The 366MB .cache inside it is excluded below; that is downloaded
-      // model files, not code.
-      "./node_modules/@huggingface/transformers/**",
+      // scripts/check-bundle.mjs (run in CI) loads the models from exactly
+      // these files, so a line missing here fails the build, not production.
+      "./node_modules/onnxruntime-node/package.json",
+      "./node_modules/onnxruntime-node/dist/**",
+      "./node_modules/onnxruntime-node/bin/napi-v6/linux/*/libonnxruntime.so.1",
+      "./node_modules/onnxruntime-node/bin/napi-v6/linux/*/onnxruntime_binding.node",
       "./node_modules/onnxruntime-common/**",
+      // transformers' built code. Its src/ and types/ are not loaded at
+      // runtime, and its .cache holds downloaded models — 366 MB once.
+      "./node_modules/@huggingface/transformers/package.json",
+      "./node_modules/@huggingface/transformers/dist/**",
     ],
   },
 
+  // For files the tracer finds on its own. None of these are named above, and
+  // an exclude cannot remove a file that an include names.
   outputFileTracingExcludes: {
-    "/api/find": [
+    "/api/**": [
       // Downloaded model files from an earlier run — 366MB of cache that made
       // the runtime look far too big for a serverless function to hold. It is
       // rebuilt on demand and must never be traced.
       "./node_modules/@huggingface/transformers/.cache/**",
       // onnxruntime-node carries binaries for every platform it supports.
-      // Both linux builds are kept: 18MB is cheaper than guessing wrong
-      // about whether the function runs on x64 or arm64.
       "./node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
       "./node_modules/onnxruntime-node/bin/napi-v6/win32/**",
       // The WASM runtime is for browsers; this code runs in Node.
