@@ -1,6 +1,6 @@
 import { cutCards } from "@/lib/pipeline";
 import { hasAnthropicKey, requestedSourceLimit } from "@/lib/env";
-import { checkAndCount, visitorFrom } from "@/lib/rate-limit";
+import { checkSearchBudget, visitorFrom } from "@/lib/rate-limit";
 import type { CutRequest } from "@/lib/types";
 
 /**
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   // The same budget as /api/find. This path runs the same searches out of the
   // same monthly credits, and every source it reads is a Claude call on top,
   // so it was the one endpoint that cost the most and had no ceiling at all.
-  const gate = checkAndCount(visitorFrom(request.headers));
+  const gate = await checkSearchBudget(visitorFrom(request.headers));
   if (!gate.allowed) {
     return Response.json(
       { error: "Search limit reached for now. Try again later." },

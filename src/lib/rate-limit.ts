@@ -11,13 +11,13 @@
  * user monopolising the day. The global limit stops a crowd of well-behaved
  * users doing the same thing collectively.
  *
- * State is in memory. On a serverless host each instance counts separately and
- * a cold start forgets, so the real limit is looser than the configured one.
- * That is a deliberate trade at this traffic: it needs no database, no signup
- * and no key, and it stops the abuse that actually happens. Move to a shared
- * store when the traffic justifies the dependency — the interface here does
- * not change.
+ * Counted in Redis when the deployment has one (checkSearchBudget), so every
+ * instance draws on the same budget. Without Redis, or when it cannot be
+ * reached, each instance counts in its own memory (checkAndCount): a cold
+ * start forgets and every instance has its own allowance, so the real limit
+ * is looser than the configured one — but it is never worse than that.
  */
+import { redisRunner } from "./redis.ts";
 
 export interface LimitConfig {
   perVisitorPerDay: number;
@@ -175,6 +175,112 @@ export function checkAndCount(
     remaining: Math.max(0, limits.perVisitorPerDay - bucket.count),
     resetInSeconds,
   };
+}
+
+/**
+ * The search limits, shared by every instance.
+ *
+ * In memory, each serverless instance kept its own count and a cold start
+ * reset it, so the monthly cap — the one meant to keep the site inside the
+ * free search tier — was really that cap times however many instances
+ * Vercel happened to run. Over the free tier, search stops for everyone
+ * until the month turns over.
+ *
+ * One script, so the check and the count happen as one step in Redis: two
+ * instances cannot both read 219 and both let a search through. It applies
+ * the same rules in the same order as checkAndCount, and like it, counts
+ * nothing for a refused search.
+ *
+ * The {limits} hash tag keeps all three keys in one slot, which a clustered
+ * Redis requires of a script that touches several keys.
+ */
+const BUDGET_SCRIPT = `
+local visitor = tonumber(redis.call('GET', KEYS[1]) or '0')
+local day = tonumber(redis.call('GET', KEYS[2]) or '0')
+local month = tonumber(redis.call('GET', KEYS[3]) or '0')
+if visitor >= tonumber(ARGV[1]) then return {0, visitor, 1} end
+if month >= tonumber(ARGV[3]) then return {0, visitor, 3} end
+if day >= tonumber(ARGV[2]) then return {0, visitor, 2} end
+visitor = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[4])
+redis.call('INCR', KEYS[2])
+redis.call('EXPIRE', KEYS[2], ARGV[4])
+redis.call('INCR', KEYS[3])
+redis.call('EXPIRE', KEYS[3], ARGV[5])
+return {1, visitor, 0}
+`;
+
+/** Day keys outlive their day so a request at 23:59:59 still finds its count. */
+const DAY_TTL_SECONDS = 2 * 24 * 3600;
+const MONTH_TTL_SECONDS = 40 * 24 * 3600;
+
+/** A slow Redis must not hold a search hostage; memory takes over after this. */
+const BUDGET_TIMEOUT_MS = 2_000;
+
+const REASONS = { 1: "visitor", 2: "global", 3: "month" } as const;
+
+/** Key names, exported for tests that inspect what was counted. */
+export function budgetKeys(visitorId: string, now: Date): [string, string, string] {
+  const day = today(now);
+  return [
+    `card-cutter:{limits}:visitor:${day}:${visitorId}`,
+    `card-cutter:{limits}:day:${day}`,
+    `card-cutter:{limits}:month:${day.slice(0, 7)}`,
+  ];
+}
+
+/**
+ * Record one search against the shared budget and say whether it is allowed.
+ *
+ * Falls back to this instance's memory when no Redis is configured, or when
+ * Redis errors or is slow — a search must not fail because the counter did.
+ *
+ * `run` is the test seam: a function that executes one raw Redis command.
+ */
+export async function checkSearchBudget(
+  visitorId: string,
+  now: Date = new Date(),
+  limits: LimitConfig = configuredLimits(),
+  run: ((command: string[]) => Promise<unknown>) | null = redisRunner(),
+): Promise<LimitResult> {
+  if (!run) return checkAndCount(visitorId, now, limits);
+
+  const keys = budgetKeys(visitorId, now);
+  const command = [
+    "EVAL", BUDGET_SCRIPT, "3", ...keys,
+    String(limits.perVisitorPerDay),
+    String(limits.globalPerDay),
+    String(limits.globalPerMonth),
+    String(DAY_TTL_SECONDS),
+    String(MONTH_TTL_SECONDS),
+  ];
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const reply = await Promise.race([
+      run(command),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timed out")), BUDGET_TIMEOUT_MS);
+      }),
+    ]);
+    const [allowed, count, reason] = (reply as unknown[]).map(Number);
+    if (![allowed, count, reason].every(Number.isFinite)) {
+      throw new Error(`unexpected reply ${JSON.stringify(reply)}`);
+    }
+    return {
+      allowed: allowed === 1,
+      remaining: Math.max(0, limits.perVisitorPerDay - count),
+      ...(allowed === 1 ? {} : { reason: REASONS[reason as 1 | 2 | 3] }),
+      resetInSeconds: secondsUntilMidnight(now),
+    };
+  } catch (err) {
+    // Said in the log, because a budget that has quietly gone back to
+    // per-instance counting looks exactly like one that works.
+    console.error("search budget: Redis unavailable, counting in memory:", err);
+    return checkAndCount(visitorId, now, limits);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Identify a visitor from proxy headers. Falls back to one shared bucket. */

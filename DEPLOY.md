@@ -141,11 +141,14 @@ Both are env vars, so raise them in Vercel when you move off the free tier.
 The remaining count shows above the results, and a refused search spends no
 credits — being turned away does not also cost the visitor an allowance.
 
-The counters live in memory. On serverless each instance counts separately
-and a cold start forgets, so the real limit is looser than the number you
-set. That is a deliberate trade: no database, no signup, no key, and it stops
-the abuse that actually happens. Move to a shared store when traffic
-justifies the dependency.
+The counters live in Redis — the same database as feedback, set up under
+[Collecting feedback](#collecting-feedback-from-real-users) — so every
+instance draws on one budget and a cold start forgets nothing. Without Redis
+they fall back to each instance's memory, where every instance has its own
+allowance and a cold start resets it, so the real limit is looser than the
+number you set. The same happens for as long as Redis cannot be reached: a
+search never fails because the counter did, and the log says
+`search budget: Redis unavailable` while it lasts.
 
 ### What it costs to lift the cap
 

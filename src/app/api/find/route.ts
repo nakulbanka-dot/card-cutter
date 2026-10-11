@@ -1,7 +1,7 @@
 import { findEvidence } from "@/lib/pipeline/free";
 import { requestedSourceLimit } from "@/lib/env";
 import { TavilyKeylessLimitError } from "@tavily/core";
-import { checkAndCount, visitorFrom } from "@/lib/rate-limit";
+import { checkSearchBudget, visitorFrom } from "@/lib/rate-limit";
 
 /**
  * POST /api/find — search, extract, read and rank.
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   const limit = requestedSourceLimit(body.limit);
 
   // Checked before any search runs, so a refused request spends no credits.
-  const gate = checkAndCount(visitorFrom(request.headers));
+  const gate = await checkSearchBudget(visitorFrom(request.headers));
   if (!gate.allowed) {
     const hours = Math.ceil(gate.resetInSeconds / 3600);
     return Response.json(
