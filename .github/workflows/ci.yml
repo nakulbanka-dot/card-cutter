@@ -9,6 +9,17 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The search budget is a script that runs inside Redis, and a fake cannot
+    # check a script. Its tests run against this one.
+    services:
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +30,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+        env:
+          REDIS_TEST_URL: redis://localhost:6379
       # No API keys here on purpose: the build must not need them. Anything
       # that reaches the network at build time is a bug this would catch.
       - run: npm run build

@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { FeedbackRow } from "./feedback";
+import { connectionUrl, redisCommand, redisConfig, tcpClient } from "./redis.ts";
 
 /**
  * Where feedback rows go.
@@ -17,89 +18,15 @@ import type { FeedbackRow } from "./feedback";
  * accepting clicks it is silently discarding. A training set you believe you
  * are collecting and are not is worse than none.
  *
- * Talks to Redis over its REST interface rather than a client library: the
- * whole protocol here is "append to a list" and "read the list", and a
- * dependency for that would cost more than it saves.
+ * The connection itself lives in redis.ts, shared with the search budget.
  */
 
 const LIST_KEY = "card-cutter:feedback";
-
-interface RedisConfig {
-  url: string;
-  token: string;
-}
-
-/**
- * Find the Redis REST credentials, whatever they were named.
- *
- * Vercel's integration lets you choose a prefix when connecting a database,
- * so the variables can arrive as KV_REST_API_URL, UPSTASH_REDIS_REST_URL,
- * STORAGE_REST_URL, or anything else someone typed into that box. Hardcoding
- * one spelling means a correctly provisioned database silently does nothing.
- *
- * Known names are tried first, then any pair of variables that look like a
- * REST url and token from the same prefix.
- */
-function redisConfig(): RedisConfig | null {
-  const known: [string, string][] = [
-    ["KV_REST_API_URL", "KV_REST_API_TOKEN"],
-    ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
-    ["REDIS_REST_URL", "REDIS_REST_TOKEN"],
-    ["STORAGE_REST_URL", "STORAGE_REST_TOKEN"],
-    ["STORAGE_KV_REST_API_URL", "STORAGE_KV_REST_API_TOKEN"],
-  ];
-  for (const [u, t] of known) {
-    const url = process.env[u];
-    const token = process.env[t];
-    if (url && token) return { url: url.replace(/\/$/, ""), token };
-  }
-
-  // Fall back to matching on shape: <PREFIX>REST_URL with a sibling token.
-  for (const [key, value] of Object.entries(process.env)) {
-    if (!value || !/REST_URL$/.test(key)) continue;
-    if (!/^https?:\/\//.test(value)) continue;
-
-    const prefix = key.slice(0, -"REST_URL".length);
-    const token =
-      process.env[`${prefix}REST_TOKEN`] ?? process.env[`${prefix}REST_API_TOKEN`];
-    if (token) return { url: value.replace(/\/$/, ""), token };
-  }
-
-  return null;
-}
-
-async function redisCommand(
-  cfg: RedisConfig,
-  command: (string | number)[],
-): Promise<unknown> {
-  const res = await fetch(cfg.url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${cfg.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!res.ok) throw new Error(`redis ${res.status}`);
-  const json = (await res.json()) as { result?: unknown; error?: string };
-  if (json.error) throw new Error(json.error);
-  return json.result;
-}
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const LOG = path.join(DATA_DIR, "feedback.jsonl");
 
 export type Backend = "redis" | "redis-rest" | "file" | "none";
-
-/** Vercel's Redis integration sets a connection string, not REST credentials. */
-function connectionUrl(): string | undefined {
-  const url =
-    process.env.REDIS_URL ??
-    process.env.STORAGE_REDIS_URL ??
-    process.env.KV_URL;
-  return url && /^rediss?:\/\//.test(url) ? url : undefined;
-}
 
 export function activeBackend(): Backend {
   if (process.env.CARD_CUTTER_COLLECT === "0") return "none";
@@ -115,37 +42,6 @@ export function activeBackend(): Backend {
 }
 
 /** Append one row. Returns false when nothing was stored. */
-/**
- * One client per process, reused across invocations.
- *
- * A serverless instance handles many requests, and reconnecting per request
- * would exhaust the connection limit quickly — the free plan allows 30.
- */
-let client: Promise<{
-  rPush: (k: string, v: string) => Promise<number>;
-  lRange: (k: string, a: number, b: number) => Promise<string[]>;
-}> | null = null;
-
-async function tcpClient() {
-  if (!client) {
-    const url = connectionUrl()!;
-    client = import("redis").then(async ({ createClient }) => {
-      const c = createClient({ url });
-      // Without a handler an emitted error is an unhandled rejection, which
-      // takes the whole function down rather than losing one row.
-      c.on("error", () => {});
-      await c.connect();
-      return c as unknown as Awaited<NonNullable<typeof client>>;
-    });
-  }
-  try {
-    return await client;
-  } catch {
-    client = null; // let the next request try again
-    return null;
-  }
-}
-
 export async function appendFeedback(row: FeedbackRow): Promise<boolean> {
   const backend = activeBackend();
 
