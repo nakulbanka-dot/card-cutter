@@ -65,6 +65,19 @@ const nextConfig: NextConfig = {
       // module to load them, and every search quietly fell back to keyword
       // scoring while answering 200.
       "./node_modules/onnxruntime-node/**",
+      // And everything the runtime itself depends on.
+      //
+      // Naming onnxruntime-node fixed "Cannot find module
+      // 'onnxruntime-node'" and revealed the next missing piece:
+      // @huggingface/transformers/node_modules/onnxruntime-common. Listing
+      // packages one at a time is how this keeps breaking — each fix ships
+      // the thing that was named and nothing it reaches for. The whole
+      // subtree is the dependency, so the whole subtree is named.
+      //
+      // The 366MB .cache inside it is excluded below; that is downloaded
+      // model files, not code.
+      "./node_modules/@huggingface/transformers/**",
+      "./node_modules/onnxruntime-common/**",
     ],
   },
 
