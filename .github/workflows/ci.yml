@@ -35,3 +35,9 @@ jobs:
       # No API keys here on purpose: the build must not need them. Anything
       # that reaches the network at build time is a bug this would catch.
       - run: npm run build
+      # The build passing says nothing about whether the deployed functions
+      # can run the models: they are loaded by dynamic import, which the
+      # tracer cannot follow, and twice production shipped without part of
+      # the runtime while everything here was green. This runs the models from
+      # exactly the files each function ships.
+      - run: npm run check:bundle
