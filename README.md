@@ -42,6 +42,11 @@ trained on: `data/`, `models/` and `.venv-train/` are all left out on purpose.
   private repo, `card-cutter-data`. Clone it into `data/` on any machine.
 - **The openCaselist corpus** (~10 GB) is public, so it is downloaded rather
   than stored: `python3 scripts/fetch-opencaselist.py`.
+- **Moving to a new Mac:** clone the repo there, then run
+  `scripts/move-from-old-mac.sh USER@OLD-MAC.local:~/card-cutter` (or a drive
+  path). It copies `data/`, `models/`, the `.env` files and `.vercel/`,
+  checks every file arrived, rebuilds the training environment with the old
+  Mac's exact package versions, and records a baseline score to beat.
 - **The training environment** is `requirements-train.txt`:
 
   ```bash
